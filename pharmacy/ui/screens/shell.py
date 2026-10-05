@@ -11,6 +11,7 @@ from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
 from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.screens.product_form import ProductFormScreen
+from pharmacy.ui.screens.shopping import ShoppingScreen
 from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.dialog import Dialog
@@ -62,6 +63,7 @@ class MainShell(tk.Frame):
         self._sections: Dict[str, ScreenFactory] = {
             sections.HOME: DashboardScreen,
             sections.MY_KIT: MyKitScreen,
+            sections.SHOPPING: ShoppingScreen,
         }
         self._current: tk.Frame = None
         self._sidebar = Sidebar(
