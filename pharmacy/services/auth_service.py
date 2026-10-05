@@ -38,7 +38,7 @@ class AuthService:
 
         Args:
             login: Логин.
-            username: Имя пользователя.
+            username: Имя пользователя. Если не введено, используется логин.
             email: Электронная почта.
             password: Пароль.
             password_repeat: Повтор пароля.
@@ -50,7 +50,7 @@ class AuthService:
             ValidationError: Если данные неверны или логин/почта уже заняты.
         """
         login = validate_login(login)
-        username = validate_username(username)
+        username = validate_username(username.strip() or login)
         email = validate_email(email)
         validate_password(password, password_repeat)
         if self._users.get_by_login(login):

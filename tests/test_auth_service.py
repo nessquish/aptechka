@@ -26,6 +26,14 @@ class RegisterTest(AuthServiceTestCase):
         self.assertEqual(user.username, "Анна")
         self.assertEqual(self.count_rows("users"), 1)
 
+    def test_empty_username_falls_back_to_login(self):
+        for empty in ("", "   "):
+            self.db.execute("DELETE FROM users")
+            user = self.auth.register(
+                "nessquish", empty, "n@mail.ru", "password1", "password1"
+            )
+            self.assertEqual(user.username, "nessquish")
+
     def test_email_is_lowercased(self):
         user = self.register(email="Anna@Mail.RU")
         self.assertEqual(user.email, "anna@mail.ru")
@@ -49,7 +57,7 @@ class RegisterTest(AuthServiceTestCase):
     def test_invalid_data_rejected_with_field_name(self):
         cases = [
             (("", "Анна", "a@mail.ru", "password1", "password1"), "login"),
-            (("anna", "", "a@mail.ru", "password1", "password1"), "username"),
+            (("anna", "а" * 51, "a@mail.ru", "password1", "password1"), "username"),
             (("anna", "Анна", "not-email", "password1", "password1"), "email"),
             (("anna", "Анна", "a@mail.ru", "short", "short"), "password"),
             (
