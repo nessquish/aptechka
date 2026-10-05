@@ -87,8 +87,26 @@ class PopupList(tk.Toplevel):
         self._canvas.bind("<ButtonRelease-1>", self._on_click)
         self._canvas.bind("<MouseWheel>", self._on_wheel)
         self.bind("<Escape>", lambda _event: self.close())
+        # Мышь не захватывается: клик в любом другом месте окна закрывает список
+        # и сразу доходит до того, на что нажали (например, до другого фильтра).
+        self._anchor = anchor
+        self._toplevel = anchor.winfo_toplevel()
+        self._outside_id = self._toplevel.bind(
+            "<ButtonPress-1>", self._on_outside_press, add="+"
+        )
         self.focus_force()
-        self.grab_set()
+
+    def _on_outside_press(self, event: tk.Event) -> None:
+        """Закрывает список при нажатии вне его (кроме поля, которое его открыло)."""
+        widget = event.widget
+        if isinstance(widget, tk.Misc) and self._belongs_to_anchor(widget):
+            return  # поле само решит: закрыть список или открыть заново
+        self.close()
+
+    def _belongs_to_anchor(self, widget: tk.Misc) -> bool:
+        path = str(widget)
+        anchor = str(self._anchor)
+        return path == anchor or path.startswith(anchor + ".")
 
     @staticmethod
     def _grab(left: int, top: int, width: int, height: int) -> Optional[Image.Image]:
@@ -188,7 +206,7 @@ class PopupList(tk.Toplevel):
         if self._closed:
             return
         self._closed = True
-        self.grab_release()
+        self._toplevel.unbind("<ButtonPress-1>", self._outside_id)
         self.destroy()
         if self._on_close is not None:
             self._on_close()

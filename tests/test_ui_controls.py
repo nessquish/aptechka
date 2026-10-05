@@ -55,6 +55,47 @@ class SelectTest(WidgetTestCase):
         self.assertEqual(picked, [2])
         self.assertIsNone(select._popup)
 
+    def test_one_click_on_another_select_switches_without_choosing(self):
+        first = self.make(value=1)
+        second = self.make(value=2)
+        click(first._canvas, 40, 16)
+        self.settle()
+        self.assertIsNotNone(first._popup)
+        click(second._canvas, 40, 16)
+        self.settle()
+        self.assertIsNone(first._popup)
+        self.assertIsNotNone(second._popup)
+        self.assertEqual(first.get(), 1)  # значение первого не изменилось
+        second._popup.close()
+
+    def test_click_elsewhere_closes_the_list_and_keeps_the_value(self):
+        select = self.make(value=1)
+        other = tk.Button(self.root, text="другая кнопка")
+        other.pack()
+        self.settle()
+        click(select._canvas, 40, 16)
+        self.settle()
+        self.assertIsNotNone(select._popup)
+        click(other, 5, 5)
+        self.settle()
+        self.assertIsNone(select._popup)
+        self.assertEqual(select.get(), 1)
+
+    def test_clicking_the_same_select_twice_closes_the_list(self):
+        select = self.make()
+        click(select._canvas, 40, 16)
+        self.settle()
+        click(select._canvas, 40, 16)
+        self.settle()
+        self.assertIsNone(select._popup)
+
+    def test_popup_does_not_grab_the_mouse(self):
+        select = self.make()
+        click(select._canvas, 40, 16)
+        self.settle()
+        self.assertEqual(self.root.grab_current(), None)
+        select._popup.close()
+
     def test_popup_closes_on_escape(self):
         select = self.make()
         click(select._canvas, 40, 16)
