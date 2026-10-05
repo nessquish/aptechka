@@ -3,10 +3,13 @@
 import tkinter as tk
 from typing import Callable, Optional
 
+from PIL import ImageTk
+
 from pharmacy.db.connection import Database
 from pharmacy.models import User
 from pharmacy.services.container import Services, build_services
 from pharmacy.ui import fonts, sections, system, theme
+from pharmacy.ui.appicon import render_app_icon
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
 from pharmacy.ui.preferences import Preferences
 from pharmacy.ui.screens.shell import TEXT_SIZE, MainShell
@@ -41,6 +44,8 @@ class App(tk.Tk):
         self.session_password = ""
         self._screen: Optional[tk.Frame] = None
         self.title(WINDOW_TITLE)
+        self._window_icon = ImageTk.PhotoImage(render_app_icon(64), master=self)
+        self.iconphoto(True, self._window_icon)
         self.minsize(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
         self._center(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
         self.show_login()
