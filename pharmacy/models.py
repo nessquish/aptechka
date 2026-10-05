@@ -174,3 +174,37 @@ class HistoryRecord:
     action: str
     description: str
     created_at: str
+
+
+class ShoppingSource:
+    """Откуда позиция попала в список покупок."""
+
+    MANUAL = "manual"
+    NOTIFICATION = "notification"
+
+
+@dataclass(frozen=True)
+class ShoppingItem:
+    """Позиция списка покупок.
+
+    Attributes:
+        id: Идентификатор.
+        user_id: Владелец списка.
+        product_id: Товар аптечки или None (добавлено вручную либо товар удалён).
+        name: Название позиции.
+        quantity: Сколько купить.
+        unit: Единица измерения.
+        source: Откуда позиция (см. ShoppingSource).
+        is_bought: Куплена ли позиция.
+        created_at: Дата и время добавления.
+    """
+
+    id: int
+    user_id: int
+    product_id: Optional[int]
+    name: str
+    quantity: float
+    unit: str
+    source: str
+    is_bought: bool
+    created_at: str
