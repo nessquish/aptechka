@@ -212,6 +212,80 @@ class TextFieldExtrasTest(WidgetTestCase):
         self.settle()
         self.assertEqual(field.get(), "")
 
+    def password(self, value="Секрет123"):
+        field = self.make(password=True, label="Пароль")
+        field.set(value)
+        field.entry.focus_force()
+        self.settle()
+        return field
+
+    def test_copy_from_a_hidden_field_gives_the_real_text(self):
+        field = self.password()
+        field.entry.selection_range(0, "end")
+        field.entry.event_generate("<<Copy>>")
+        self.assertEqual(self.root.clipboard_get(), "Секрет123")
+        self.assertEqual(field.get(), "Секрет123")
+
+    def test_copy_part_of_a_hidden_field(self):
+        field = self.password()
+        field.entry.selection_range(2, 5)
+        field.entry.event_generate("<<Copy>>")
+        self.assertEqual(self.root.clipboard_get(), "кре")
+
+    def test_cut_from_a_hidden_field(self):
+        field = self.password()
+        field.entry.selection_range(0, "end")
+        field.entry.event_generate("<<Cut>>")
+        self.settle()
+        self.assertEqual(self.root.clipboard_get(), "Секрет123")
+        self.assertEqual(field.get(), "")
+
+    def test_cut_part_of_a_hidden_field(self):
+        field = self.password()
+        field.entry.selection_range(0, 3)
+        field.entry.event_generate("<<Cut>>")
+        self.assertEqual(self.root.clipboard_get(), "Сек")
+        self.assertEqual(field.get(), "рет123")
+
+    def test_keyboard_shortcut_on_russian_layout_copies_the_real_text(self):
+        field = self.password()
+        field.entry.selection_range(0, "end")
+        self.shortcut(field, 67, "Cyrillic_es")
+        self.assertEqual(self.root.clipboard_get(), "Секрет123")
+
+    def test_revealed_password_copies_normally(self):
+        field = self.password("abc123")
+        field._toggle_reveal()
+        field.entry.selection_range(0, "end")
+        field.entry.event_generate("<<Copy>>")
+        self.assertEqual(self.root.clipboard_get(), "abc123")
+
+    def test_copy_with_nothing_selected_keeps_the_clipboard(self):
+        field = self.password()
+        self.root.clipboard_clear()
+        self.root.clipboard_append("старое")
+        field.entry.selection_clear()
+        field.entry.event_generate("<<Copy>>")
+        self.assertEqual(self.root.clipboard_get(), "старое")
+
+    def test_paste_into_a_hidden_field_still_works(self):
+        field = self.make(password=True, label="Пароль")
+        self.root.clipboard_clear()
+        self.root.clipboard_append("Вставлено1")
+        field.entry.focus_force()
+        self.settle()
+        field.entry.event_generate("<<Paste>>")
+        self.settle()
+        self.assertEqual(field.get(), "Вставлено1")
+
+    def test_plain_field_copy_is_unchanged(self):
+        field = self.make(label="Название")
+        field.set("Бинт")
+        field.entry.focus_force()
+        field.entry.selection_range(0, "end")
+        field.entry.event_generate("<<Copy>>")
+        self.assertEqual(self.root.clipboard_get(), "Бинт")
+
     def test_select_all_on_russian_layout(self):
         field = self.make()
         field.set("текст")

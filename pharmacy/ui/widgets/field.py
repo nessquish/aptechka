@@ -292,6 +292,8 @@ class TextField(LabeledBox):
         self._entry.bind("<KeyRelease>", self._notify, add="+")
         self._entry.bind("<<Paste>>", self._notify, add="+")
         self._entry.bind("<<Cut>>", self._notify, add="+")
+        self._entry.bind("<<Copy>>", self._on_copy, add="+")
+        self._entry.bind("<<Cut>>", self._on_cut, add="+")
         self._entry.bind("<Control-KeyPress>", self._on_shortcut)
         self._entry.bind("<Button-3>", self._show_menu)
         if placeholder:
@@ -404,6 +406,44 @@ class TextField(LabeledBox):
             self._select_all()
         else:
             self._entry.event_generate(f"<<{action}>>")
+        return "break"
+
+    def _is_masked(self) -> bool:
+        """Скрыт ли сейчас введённый текст точками."""
+        return self._password and not self._revealed and not self._placeholder_on
+
+    def _selected_text(self) -> str:
+        """Настоящий выделенный текст (а не точки, которые видны на экране)."""
+        if not self._entry.selection_present():
+            return ""
+        first = self._entry.index("sel.first")
+        last = self._entry.index("sel.last")
+        return self._entry.get()[first:last]
+
+    def _on_copy(self, _event: tk.Event) -> Optional[str]:
+        """Копирует настоящий текст скрытого поля, а не точки.
+
+        Tk копирует то, что видно на экране, поэтому из поля пароля в буфер
+        попадали бы точки. Для остальных полей остаётся обычное копирование.
+        """
+        if not self._is_masked():
+            return None
+        text = self._selected_text()
+        if text:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+        return "break"
+
+    def _on_cut(self, event: tk.Event) -> Optional[str]:
+        """Вырезает настоящий текст скрытого поля."""
+        if not self._is_masked():
+            return None
+        text = self._selected_text()
+        if text and not self._readonly:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self._entry.delete("sel.first", "sel.last")
+            self._notify()
         return "break"
 
     def _show_menu(self, event: tk.Event) -> None:
