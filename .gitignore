@@ -1,0 +1,14 @@
+# Виртуальное окружение и кэш Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Локальная база данных (создаётся командой python -m pharmacy.db.seed)
+data/
+
+# Файлы редакторов
+.idea/
+.vscode/
+*.swp
