@@ -60,8 +60,9 @@ class GradientTest(unittest.TestCase):
         image = gradient_box(40, 40, "#000000", "#FFFFFF", angle=180)
         top = image.getpixel((20, 0))
         bottom = image.getpixel((20, 39))
-        self.assertLess(top[0], 20)
-        self.assertGreater(bottom[0], 235)
+        self.assertLess(top[0], 40)
+        self.assertGreater(bottom[0], 215)
+        self.assertLess(top[0], bottom[0])
 
     def test_size(self):
         self.assertEqual(gradient_box(30, 20, "#000000", "#FFFFFF").size, (30, 20))

@@ -7,10 +7,11 @@ from pharmacy.ui import theme
 from pharmacy.ui.drawing import Shadow, rounded_box
 from pharmacy.ui.fonts import font_spec
 from pharmacy.ui.icons import render_icon
-from pharmacy.ui.theme import palette
+from pharmacy.ui.theme import SHADOW_PAD, palette
 from pharmacy.ui.widgets.common import parent_bg, photo
 
-RING_PAD = 3  # место под красное кольцо вокруг поля с ошибкой
+RING_PAD = SHADOW_PAD  # поле вокруг рамки: помещается кольцо ошибки и тень
+RING_WIDTH = 3  # толщина красного кольца вокруг поля с ошибкой
 TEXT_INSET = 10
 ICON_SIZE = 16
 ICON_INSET = 10
@@ -87,6 +88,7 @@ class TextField(tk.Frame):
             font=font_spec("caption", self),
             anchor="w",
             justify="left",
+            padx=0,
         )
 
         self._canvas.bind("<Configure>", self._on_resize)
@@ -101,13 +103,14 @@ class TextField(tk.Frame):
         """Строит строку подписи над полем."""
         pal = palette()
         row = tk.Frame(self, bg=self.cget("bg"))
-        row.pack(fill="x", pady=(0, 5 - RING_PAD))
+        row.pack(fill="x", padx=RING_PAD, pady=(0, 5 - RING_PAD))
         tk.Label(
             row,
             text=text,
             bg=row.cget("bg"),
             fg=pal.ink_2,
             font=font_spec("label", self),
+            padx=0,
         ).pack(side="left")
         if required:
             tk.Label(
@@ -116,6 +119,7 @@ class TextField(tk.Frame):
                 bg=row.cget("bg"),
                 fg=pal.red,
                 font=font_spec("label", self),
+                padx=0,
             ).pack(side="left")
 
     # --- публичный интерфейс ---
@@ -145,11 +149,19 @@ class TextField(tk.Frame):
         """Вызывает команду по нажатию Enter в поле."""
         self._entry.bind("<Return>", lambda _event: command())
 
-    def set_error(self, message: str) -> None:
-        """Подсвечивает поле красным и показывает сообщение под ним."""
+    def set_error(self, message: str = "") -> None:
+        """Подсвечивает поле красным и показывает сообщение под ним.
+
+        Args:
+            message: Текст ошибки. Если пустой, поле только краснеет
+                (сообщение показано в другом месте, например над формой).
+        """
         self._error = message
         self._error_label.configure(text=message)
-        self._error_label.pack(fill="x", pady=(4 - RING_PAD, 0))
+        if message:
+            self._error_label.pack(fill="x", padx=RING_PAD, pady=(4 - RING_PAD, 0))
+        else:
+            self._error_label.pack_forget()
         self._draw()
 
     def clear_error(self) -> None:
@@ -246,7 +258,7 @@ class TextField(tk.Frame):
             shadows=(Shadow(1, 2, pal.shadow, 0.05),),
             pad=RING_PAD,
             ring=ring,
-            ring_width=RING_PAD,
+            ring_width=RING_WIDTH,
         )
         self._images = [photo(box, self)]
         self._canvas.delete("decor")

@@ -28,6 +28,7 @@ class Palette:
     ink: str  # основной текст
     ink_2: str  # второстепенный текст
     ink_3: str  # подсказки и неактивный текст
+    brand_ink: str  # название приложения и заголовки на экранах входа
     primary: str  # главный акцентный цвет
     primary_soft: str  # светлая подложка акцента (выбранный пункт, иконки)
     primary_ink: str  # текст на светлой подложке акцента
@@ -63,6 +64,7 @@ LIGHT = Palette(
     ink="#262A45",
     ink_2="#5B5F77",
     ink_3="#8E91A6",
+    brand_ink="#2F3260",
     primary="#5F57E8",
     primary_soft="#DAD7FC",
     primary_ink="#4B43D1",
@@ -98,6 +100,7 @@ DARK = Palette(
     ink="#ECEDF8",
     ink_2="#AAADC8",
     ink_3="#7F82A1",
+    brand_ink="#ECEDF8",
     primary="#7A72F2",
     primary_soft="#2F2C6B",
     primary_ink="#CBC7FF",
@@ -191,6 +194,7 @@ BADGE_RADIUS = 9
 # Места под тени вокруг нарисованных виджетов (тень выходит за границу фигуры).
 SHADOW_PAD = 4
 CARD_SHADOW_PAD = 6
+MODAL_SHADOW_PAD = 36  # большая тень окна входа и модальных окон
 
 # Начертания: название стиля -> (размер в пикселях, насыщенность).
 TYPOGRAPHY: Dict[str, Tuple[int, int]] = {
@@ -199,6 +203,7 @@ TYPOGRAPHY: Dict[str, Tuple[int, int]] = {
     "heading": (18, 700),
     "section": (14, 700),
     "brand": (13, 700),
+    "lead": (13, 400),
     "body": (12, 400),
     "body_medium": (12, 500),
     "body_strong": (12, 600),

@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from pharmacy.ui.theme import hex_to_rgb
 
 SCALE = 4  # во сколько раз рисуем крупнее, чем нужно
+_GRADIENT_STEP = 8  # во сколько раз градиент считается мельче, чем показывается
 
 
 @dataclass(frozen=True)
@@ -149,13 +150,18 @@ def gradient_box(
     dx, dy = math.sin(radians), -math.cos(radians)
     length = abs(width * dx) + abs(height * dy)
     first, last = hex_to_rgb(start), hex_to_rgb(end)
-    image = Image.new("RGB", (width, height))
+    # Градиент плавный, поэтому считаем его в уменьшенном виде и растягиваем.
+    small_w = max(width // _GRADIENT_STEP, 2)
+    small_h = max(height // _GRADIENT_STEP, 2)
+    image = Image.new("RGB", (small_w, small_h))
     pixels = image.load()
-    for y in range(height):
-        for x in range(width):
-            along = ((x - width / 2) * dx + (y - height / 2) * dy) / length + 0.5
+    for y in range(small_h):
+        for x in range(small_w):
+            px = (x + 0.5) * width / small_w
+            py = (y + 0.5) * height / small_h
+            along = ((px - width / 2) * dx + (py - height / 2) * dy) / length + 0.5
             along = min(max(along, 0.0), 1.0)
             pixels[x, y] = tuple(
                 round(a + (b - a) * along) for a, b in zip(first, last)
             )
-    return image
+    return image.resize((width, height), Image.Resampling.BILINEAR)

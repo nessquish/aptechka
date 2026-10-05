@@ -5,7 +5,7 @@ import tkinter as tk
 from pharmacy.ui import theme
 from pharmacy.ui.drawing import rounded_box
 from pharmacy.ui.fonts import font_spec, line_height
-from pharmacy.ui.theme import palette
+from pharmacy.ui.theme import SHADOW_PAD, palette
 from pharmacy.ui.widgets.common import parent_bg, photo
 
 PADDING_X = 10
@@ -51,21 +51,23 @@ class ErrorBanner(tk.Canvas):
             return
         pal = palette()
         font = font_spec("small", self)
+        # Края плашки совпадают с краями полей: у тех по бокам поле под тень.
         item = self.create_text(
-            PADDING_X,
+            SHADOW_PAD + PADDING_X,
             PADDING_Y,
             text=self._text,
             anchor="nw",
             fill=pal.red,
             font=font,
-            width=self._width - 2 * PADDING_X,
+            width=self._width - 2 * (SHADOW_PAD + PADDING_X),
         )
         _, top, _, bottom = self.bbox(item)
         height = max(bottom - top, line_height(self, "small")) + 2 * PADDING_Y
-        self._image = photo(
-            rounded_box(self._width, height, theme.CONTROL_RADIUS, pal.red_bg), self
+        box = rounded_box(
+            self._width - 2 * SHADOW_PAD, height, theme.CONTROL_RADIUS, pal.red_bg
         )
-        image = self.create_image(0, 0, image=self._image, anchor="nw")
+        self._image = photo(box, self)
+        image = self.create_image(SHADOW_PAD, 0, image=self._image, anchor="nw")
         self.tag_lower(image)
         self.configure(height=height)
 
