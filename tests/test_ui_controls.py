@@ -140,7 +140,73 @@ class TextFieldExtrasTest(WidgetTestCase):
         self.settle()
         field.entry.insert(0, "а")
         field.entry.event_generate("<KeyRelease>", keysym="BackSpace")
+        self.settle()
         self.assertEqual(calls, [1])
+
+    def shortcut(self, field, keycode, keysym="Cyrillic_em"):
+        """Нажатие Ctrl+клавиша на русской раскладке (буква не латинская)."""
+        event = type("E", (), {"keysym": keysym, "keycode": keycode})()
+        return field._on_shortcut(event)
+
+    def test_paste_works_on_russian_layout(self):
+        calls: List[int] = []
+        field = self.make(on_change=lambda: calls.append(1))
+        self.root.clipboard_clear()
+        self.root.clipboard_append("из буфера")
+        field.entry.focus_force()
+        self.settle()
+        self.assertEqual(self.shortcut(field, 86), "break")
+        self.settle()
+        self.assertEqual(field.get(), "из буфера")
+        self.assertEqual(calls, [1])
+
+    def test_copy_and_cut_on_russian_layout(self):
+        field = self.make()
+        field.set("текст")
+        field.entry.focus_force()
+        field.entry.selection_range(0, "end")
+        self.shortcut(field, 67, "Cyrillic_es")
+        self.assertEqual(self.root.clipboard_get(), "текст")
+        self.shortcut(field, 88, "Cyrillic_che")
+        self.settle()
+        self.assertEqual(field.get(), "")
+
+    def test_select_all_on_russian_layout(self):
+        field = self.make()
+        field.set("текст")
+        self.shortcut(field, 65, "Cyrillic_ef")
+        self.assertEqual(field.entry.selection_get(), "текст")
+
+    def test_multiline_paste_and_select_all(self):
+        field = self.make(label="Примечание", multiline=True)
+        self.root.clipboard_clear()
+        self.root.clipboard_append("строка")
+        field.entry.focus_force()
+        self.settle()
+        self.shortcut(field, 86)
+        self.settle()
+        self.assertEqual(field.get(), "строка")
+        self.shortcut(field, 65, "Cyrillic_ef")
+        self.assertEqual(field.entry.tag_ranges("sel") != (), True)
+
+    def test_latin_layout_is_left_to_tk(self):
+        field = self.make()
+        self.assertIsNone(self.shortcut(field, 86, "v"))
+
+    def test_other_shortcuts_are_ignored(self):
+        field = self.make()
+        self.assertIsNone(self.shortcut(field, 90, "Cyrillic_ya"))
+
+    def test_readonly_field_cannot_be_pasted_into(self):
+        field = self.make(label="Логин", readonly=True)
+        field.set("nessquish")
+        self.root.clipboard_clear()
+        self.root.clipboard_append("чужое")
+        field.entry.focus_force()
+        self.settle()
+        self.shortcut(field, 86)
+        self.settle()
+        self.assertEqual(field.get(), "nessquish")
 
 
 class SegmentedTest(WidgetTestCase):

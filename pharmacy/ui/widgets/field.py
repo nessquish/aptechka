@@ -21,6 +21,8 @@ TEXT_INSET = 10
 ICON_SIZE = 16
 ICON_INSET = 10
 MASK_CHAR = "•"
+# Коды клавиш Windows для Ctrl+сочетаний: не зависят от раскладки.
+_SHORTCUT_KEYCODES = {67: "Copy", 86: "Paste", 88: "Cut", 65: "select_all"}
 AREA_HEIGHT = 54  # высота многострочного поля
 AREA_PADDING_TOP = 9
 
@@ -221,6 +223,7 @@ class TextField(LabeledBox):
         compact: bool = False,
         on_change: Optional[Callable[[], None]] = None,
         width: Optional[int] = None,
+        justify: str = "left",
     ) -> None:
         """Создаёт поле.
 
@@ -237,6 +240,7 @@ class TextField(LabeledBox):
             compact: Вид поля на панели фильтров.
             on_change: Вызывается после каждого изменения текста пользователем.
             width: Ширина поля (по умолчанию на всю ширину родителя).
+            justify: Выравнивание текста в однострочном поле: ``left`` или ``center``.
         """
         super().__init__(
             master,
@@ -270,7 +274,9 @@ class TextField(LabeledBox):
         if multiline:
             self._entry = tk.Text(self._canvas, wrap="word", **options)
         else:
-            self._entry = tk.Entry(self._canvas, show=self._mask(), **options)
+            self._entry = tk.Entry(
+                self._canvas, show=self._mask(), justify=justify, **options
+            )
         self._entry_window = self._canvas.create_window(
             0, 0, window=self._entry, anchor="nw" if multiline else "w"
         )
@@ -286,6 +292,8 @@ class TextField(LabeledBox):
         self._entry.bind("<KeyRelease>", self._notify, add="+")
         self._entry.bind("<<Paste>>", self._notify, add="+")
         self._entry.bind("<<Cut>>", self._notify, add="+")
+        self._entry.bind("<Control-KeyPress>", self._on_shortcut)
+        self._entry.bind("<Button-3>", self._show_menu)
         if placeholder:
             self._show_placeholder()
 
@@ -372,8 +380,62 @@ class TextField(LabeledBox):
     # --- события ---
 
     def _notify(self, _event: Optional[tk.Event] = None) -> None:
-        if self._on_change is not None and not self._placeholder_on:
+        """Сообщает об изменении текста после того, как Tk закончил вставку."""
+        if self._on_change is not None:
+            self.after_idle(self._fire_change)
+
+    def _fire_change(self) -> None:
+        if self.winfo_exists() and not self._placeholder_on:
             self._on_change()
+
+    def _on_shortcut(self, event: tk.Event) -> Optional[str]:
+        """Работают ли Ctrl+C, V, X и A на любой раскладке клавиатуры.
+
+        Tk определяет сочетание по букве, а на русской раскладке вместо «v»
+        приходит «м», и вставка не срабатывает. Поэтому для не латинских букв
+        сочетание определяется по коду клавиши.
+        """
+        if event.keysym.lower() in ("c", "v", "x", "a"):
+            return None  # латинская раскладка: Tk справится сам
+        action = _SHORTCUT_KEYCODES.get(event.keycode)
+        if action is None:
+            return None
+        if action == "select_all":
+            self._select_all()
+        else:
+            self._entry.event_generate(f"<<{action}>>")
+        return "break"
+
+    def _show_menu(self, event: tk.Event) -> None:
+        """Контекстное меню по правой кнопке мыши."""
+        self._entry.focus_set()
+        menu = tk.Menu(self._entry, tearoff=0)
+        editable = not self._readonly
+        menu.add_command(
+            label="Вырезать",
+            command=lambda: self._entry.event_generate("<<Cut>>"),
+            state="normal" if editable else "disabled",
+        )
+        menu.add_command(
+            label="Копировать", command=lambda: self._entry.event_generate("<<Copy>>")
+        )
+        menu.add_command(
+            label="Вставить",
+            command=lambda: self._entry.event_generate("<<Paste>>"),
+            state="normal" if editable else "disabled",
+        )
+        menu.add_separator()
+        menu.add_command(label="Выделить всё", command=self._select_all)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _select_all(self) -> None:
+        if self._multiline:
+            self._entry.tag_add("sel", "1.0", "end-1c")
+        else:
+            self._entry.selection_range(0, "end")
 
     def _on_focus_in(self, _event: tk.Event) -> None:
         self._focused = True
