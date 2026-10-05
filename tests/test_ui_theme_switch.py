@@ -117,6 +117,52 @@ class CompactSelectWidthTest(WidgetTestCase):
         self.assertGreater(select._canvas.winfo_width(), short)
 
 
+class SelectBorderTest(WidgetTestCase):
+    OPTIONS = [(1, "Все категории"), (2, "Лекарства")]
+
+    def make(self):
+        select = Select(self.root, self.OPTIONS, 1, compact=True)
+        select.pack()
+        self.settle()
+        return select
+
+    def test_blue_border_only_while_the_list_is_open(self):
+        select = self.make()
+        self.assertEqual(select._colors()[0], theme.LIGHT.line)
+        select._toggle(None)
+        self.settle()
+        self.assertEqual(select._colors()[0], theme.LIGHT.primary)
+        select._popup.close()
+        self.settle()
+        self.assertEqual(select._colors()[0], theme.LIGHT.line)
+
+    def test_border_is_normal_after_picking(self):
+        select = self.make()
+        select._toggle(None)
+        self.settle()
+        select._popup._on_pick(2)
+        select._popup.close()
+        self.settle()
+        self.assertEqual(select._colors()[0], theme.LIGHT.line)
+
+    def test_error_color_wins_over_open_state(self):
+        select = self.make()
+        select.set_error("Выберите")
+        select._toggle(None)
+        self.settle()
+        self.assertEqual(select._colors()[0], theme.LIGHT.red)
+        select._popup.close()
+
+    def test_list_starts_below_the_field_and_does_not_cover_it(self):
+        select = self.make()
+        select._toggle(None)
+        self.settle()
+        canvas = select._canvas
+        bottom = canvas.winfo_rooty() + canvas.winfo_height()
+        self.assertGreaterEqual(select._popup.winfo_rooty(), bottom)
+        select._popup.close()
+
+
 class SmoothCornersTest(WidgetTestCase):
     def make_table(self):
         card = Card(self.root, flush=True)
@@ -157,6 +203,65 @@ class SmoothCornersTest(WidgetTestCase):
         )
         self.settle()
         self.assertIsNot(table._images[0], before)
+
+    def test_card_paints_the_band_with_smooth_corners(self):
+        card, table = self.make_table()
+        flat = card._flat
+        pad = card._shadow_pad
+        head = tuple(int(theme.LIGHT.table_head[i : i + 2], 16) for i in (1, 3, 5))
+        # В середине полосы цвет шапки, в самом углу - край карточки, не шапка.
+        middle = flat.getpixel((flat.width // 2, pad + 6))[:3]
+        self.assertEqual(middle, head)
+        corner = flat.getpixel((pad + 1, pad + 1))[:3]
+        self.assertNotEqual(corner, head)
+        # Ниже полосы заливка карточки.
+        below = flat.getpixel((flat.width // 2, pad + table._header_height + 10))[:3]
+        self.assertNotEqual(below, head)
+
+    def test_band_can_be_replaced_and_removed(self):
+        card, table = self.make_table()
+        pad = card._shadow_pad
+        card.set_band(30, "#FF0000")
+        self.assertEqual(
+            card._flat.getpixel((card._flat.width // 2, pad + 5))[:3], (255, 0, 0)
+        )
+        card.set_band(0, None)
+        self.assertNotEqual(
+            card._flat.getpixel((card._flat.width // 2, pad + 5))[:3], (255, 0, 0)
+        )
+
+    def test_action_bar_takes_over_and_returns_the_band(self):
+        from pharmacy.ui.widgets.actionbar import ActionBar
+
+        card, table = self.make_table()
+        bar = ActionBar(card.body, card)
+        table.set_rounded_top(False)
+        bar.show("Выбрано: 2", before=table)
+        self.settle()
+        pad = card._shadow_pad
+        bulk = tuple(int(theme.LIGHT.bulk_bg[i : i + 2], 16) for i in (1, 3, 5))
+        self.assertEqual(
+            card._flat.getpixel((card._flat.width // 2, pad + 6))[:3], bulk
+        )
+        bar.hide()
+        table.set_rounded_top(True)
+        self.settle()
+        head = tuple(int(theme.LIGHT.table_head[i : i + 2], 16) for i in (1, 3, 5))
+        self.assertEqual(
+            card._flat.getpixel((card._flat.width // 2, pad + 6))[:3], head
+        )
+
+    def test_highlight_row_has_a_rounded_chip(self):
+        from pharmacy.ui.widgets.highlight import Highlight
+
+        row = Highlight(self.root, "#FAFAFF")
+        row.pack(fill="x")
+        tk.Label(row.body, text="текст", bg="#FAFAFF").pack()
+        self.settle()
+        self.assertIsNotNone(row._image)
+        self.assertEqual(
+            row.winfo_height(), row.body.winfo_reqheight() + 2 * Highlight.padding_y
+        )
 
     def test_table_works_without_a_card(self):
         table = DataTable(self.root, [Column("Название", 1)])

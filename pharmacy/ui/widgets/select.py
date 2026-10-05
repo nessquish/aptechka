@@ -116,11 +116,10 @@ class Select(LabeledBox):
         if self._popup is not None:
             self._popup.close()
             return
-        self._focused = True
-        self._draw()
         self._popup = PopupList(
             self._canvas, self._choices, self._value, self._pick, self._closed
         )
+        self._draw()  # рамка становится голубой, пока список открыт
 
     def _pick(self, value: object) -> None:
         self._value = value
@@ -132,9 +131,14 @@ class Select(LabeledBox):
 
     def _closed(self) -> None:
         self._popup = None
-        self._focused = False
         if self.winfo_exists():
             self._draw()
+
+    def _colors(self):
+        """Голубая рамка только пока открыт список (а не пока поле «в фокусе»)."""
+        if self._error is None and self._popup is not None:
+            return palette().primary, None
+        return super()._colors()
 
     def _place_content(self) -> None:
         pal = palette()

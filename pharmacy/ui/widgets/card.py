@@ -4,7 +4,7 @@ import math
 import tkinter as tk
 from typing import Callable, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw
 
 from pharmacy.ui import theme
 from pharmacy.ui.drawing import Shadow, rgba, rounded_box
@@ -68,6 +68,8 @@ class Card(tk.Frame):
             None  # карточка вместе с тенью, без прозрачности
         )
         self._listeners: List[Callable[[], None]] = []
+        self._band: Optional[Tuple[int, str]] = None
+        self._size: Optional[Tuple[int, int]] = None
         self._background = tk.Canvas(
             self, bd=0, highlightthickness=0, bg=parent_bg(master)
         )
@@ -85,15 +87,62 @@ class Card(tk.Frame):
             self.pack_propagate(False)
         self._background.bind("<Configure>", self._on_resize)
 
+    def set_band(self, height: int, color: Optional[str]) -> None:
+        """Закрашивает верхнюю полосу карточки цветом (шапка таблицы, панель).
+
+        Полоса рисуется самой карточкой по той же скруглённой маске, что и
+        заливка, поэтому верхние углы у всех таблиц получаются одинаково
+        гладкими. Содержимое, лежащее в полосе, рисуется на «снимке» карточки
+        (``capture``) и не закрывает углы.
+
+        Args:
+            height: Высота полосы в пикселях (0 убирает полосу).
+            color: Цвет полосы ``#RRGGBB``.
+        """
+        band = (height, color) if height and color else None
+        if band == self._band:
+            return
+        self._band = band
+        if self._size is not None:
+            self._redraw()
+
     def _on_resize(self, event: tk.Event) -> None:
-        """Рисует рамку и тень под содержимым по новому размеру."""
+        """Перерисовывает карточку по новому размеру."""
         pad = self._shadow_pad
         if event.width <= 2 * pad + 2 or event.height <= 2 * pad + 2:
             return
+        self._size = (event.width, event.height)
+        self._redraw()
+
+    def _band_layer(self, size: Tuple[int, int]) -> Image.Image:
+        """Слой с цветной полосой, обрезанный по внутреннему скруглению карточки."""
+        height, color = self._band
+        pad = self._shadow_pad
+        width, total = self._size
+        inner = rounded_box(
+            width - 2 * pad - 2 * BORDER,
+            total - 2 * pad - 2 * BORDER,
+            self._radius - BORDER,
+            "#FFFFFF",
+        ).getchannel("A")
+        mask = Image.new("L", size, 0)
+        mask.paste(inner, (pad + BORDER, pad + BORDER))
+        rows = Image.new("L", size, 0)
+        ImageDraw.Draw(rows).rectangle(
+            (0, pad + BORDER, size[0], pad + BORDER + height - 1), fill=255
+        )
+        layer = Image.new("RGBA", size, rgba(color))
+        layer.putalpha(ImageChops.multiply(mask, rows))
+        return layer
+
+    def _redraw(self) -> None:
+        """Рисует рамку, заливку, тень и полосу под содержимым."""
+        width, height = self._size
+        pad = self._shadow_pad
         pal = palette()
         shape = rounded_box(
-            event.width - 2 * pad,
-            event.height - 2 * pad,
+            width - 2 * pad,
+            height - 2 * pad,
             self._radius,
             pal.card,
             pal.line,
@@ -102,15 +151,14 @@ class Card(tk.Frame):
         )
         if self._backdrop is not None:
             left, top = self.winfo_x(), self.winfo_y()
-            base = self._backdrop.crop(
-                (left, top, left + event.width, top + event.height)
-            )
+            base = self._backdrop.crop((left, top, left + width, top + height))
         else:
-            base = Image.new("RGBA", shape.size, rgba(self._background.cget("bg"), 1.0))
+            base = Image.new("RGBA", shape.size, rgba(self._background.cget("bg")))
         base.alpha_composite(shape)
+        if self._band is not None:
+            base.alpha_composite(self._band_layer(base.size))
         self._flat = base
-        shape = base
-        self._image = photo(shape, self)
+        self._image = photo(base, self)
         self._background.delete("all")
         self._background.create_image(0, 0, image=self._image, anchor="nw")
         for listener in list(self._listeners):

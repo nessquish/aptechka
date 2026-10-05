@@ -92,9 +92,7 @@ class ShoppingScreen(tk.Frame):
         pal = palette()
         card = Card(self, flush=True)
         card.pack(fill="x", pady=(18 - CARD_SHADOW_PAD - SHADOW_PAD, 0))
-        self._top = tk.Frame(card.body, bg=pal.card)
-        self._top.pack(fill="x")
-        self._bar = ActionBar(self._top, card)
+        self._bar = ActionBar(card.body, card)
         Button(
             self._bar.buttons,
             "Отметить как купленные",
@@ -180,13 +178,13 @@ class ShoppingScreen(tk.Frame):
     def _update_bar(self) -> None:
         """Показывает панель действий, пока выбрана хотя бы одна строка."""
         count = len(self._selected)
-        if count:
-            self._bar.set_text(f"Выбрано: {count}")
-            if not self._bar.winfo_ismapped():
-                self._bar.pack(fill="x")
-        else:
-            self._bar.pack_forget()
+        # Сначала шапка таблицы отдаёт верхнюю полосу карточки, потом панель
+        # занимает её (или шапка забирает обратно, когда панель скрыта).
         self._table.set_rounded_top(not count)
+        if count:
+            self._bar.show(f"Выбрано: {count}", before=self._table)
+        else:
+            self._bar.hide()
         everything = bool(self._visible) and count == len(self._visible)
         self._select_all.set(everything)
 

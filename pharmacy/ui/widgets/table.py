@@ -92,6 +92,8 @@ class DataTable(tk.Frame):
         )
         self._header.pack(fill="x")
         self._header.bind("<Configure>", self._on_resize)
+        if card is not None:
+            card.set_band(self._header_height, palette().table_head)
         self._body = tk.Frame(self, bg=self.cget("bg"))
         self._body.pack(fill="x")
 
@@ -102,8 +104,16 @@ class DataTable(tk.Frame):
             self._draw_header()
 
     def set_rounded_top(self, rounded: bool) -> None:
-        """Скругляет верхние углы шапки (выключается, когда над таблицей панель)."""
+        """Красит шапку у верхнего края карточки.
+
+        Выключается, когда над таблицей стоит панель действий.
+        """
         self._rounded_top = rounded
+        if self._card is not None:
+            if rounded:
+                self._card.set_band(self._header_height, palette().table_head)
+            else:
+                self._card.set_band(0, None)
         if self._width:
             self._draw_header()
 
@@ -233,23 +243,23 @@ class DataTable(tk.Frame):
     def _redraw_header(self) -> None:
         """Перерисовывает шапку после перерисовки карточки (изменился край)."""
         if self._width and self.winfo_exists():
-            self.after_idle(self._draw_header)
+            self._draw_header()
 
     def _draw_header(self) -> None:
         pal = palette()
         canvas = self._header
         canvas.delete("all")
         self._images = []
-        radius = theme.CARD_RADIUS - 1 if self._rounded_top else 0
-        shape = rounded_box(
-            self._width, self._header_height + radius, radius, pal.table_head
-        ).crop((0, 0, self._width, self._header_height))
-        under = self._card.capture(canvas) if self._card is not None else None
-        if under is not None:
-            # Углы шапки ложатся на настоящий скруглённый край карточки.
-            under.alpha_composite(shape)
-            shape = under
-        self._images.append(photo(shape, canvas))
+        picture = None
+        if self._card is not None and self._rounded_top:
+            # Полосу шапки (вместе со скруглёнными углами) рисует сама карточка.
+            picture = self._card.capture(canvas)
+        if picture is None:
+            radius = 0 if self._card is not None else theme.CARD_RADIUS - 1
+            picture = rounded_box(
+                self._width, self._header_height + radius, radius, pal.table_head
+            ).crop((0, 0, self._width, self._header_height))
+        self._images.append(photo(picture, canvas))
         canvas.create_image(0, 0, image=self._images[0], anchor="nw")
         middle = self._header_height / 2
         lefts = self._fractions()

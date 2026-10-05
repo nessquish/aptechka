@@ -18,7 +18,7 @@ LIST_PADDING = 4
 SHADOW_PAD = 12
 MAX_VISIBLE = 8
 LIST_RADIUS = 8
-GAP = 4  # расстояние от поля до списка
+TOP_PAD = 2  # отступ списка от нижнего края поля (само поле уже имеет поле под тень)
 
 
 class PopupList(tk.Toplevel):
@@ -67,9 +67,11 @@ class PopupList(tk.Toplevel):
         self._font = font
 
         total_width = self._inner_width + 2 * SHADOW_PAD
-        total_height = self._inner_height + 2 * SHADOW_PAD
+        total_height = self._inner_height + TOP_PAD + SHADOW_PAD
         left = anchor.winfo_rootx() - SHADOW_PAD
-        top = anchor.winfo_rooty() + anchor.winfo_height() + GAP - SHADOW_PAD
+        # Окно начинается сразу под полем и не заходит на него: так снимок фона под
+        # списком не содержит рамки поля, даже если она только что перерисована.
+        top = anchor.winfo_rooty() + anchor.winfo_height()
         self.geometry(f"{total_width}x{total_height}+{left}+{top}")
         self._canvas = tk.Canvas(
             self,
@@ -131,6 +133,8 @@ class PopupList(tk.Toplevel):
             shadows=(Shadow(4, 12, pal.shadow, 0.14), Shadow(1, 3, pal.shadow, 0.06)),
             pad=SHADOW_PAD,
         )
+        # Сверху тень не нужна (список стоит под полем): обрезаем её до TOP_PAD.
+        shape = shape.crop((0, SHADOW_PAD - TOP_PAD, shape.width, shape.height))
         if self._backdrop is not None:
             base = self._backdrop.copy()
             base.alpha_composite(shape)
@@ -141,7 +145,7 @@ class PopupList(tk.Toplevel):
         for row in range(visible):
             index = self._offset + row
             value, label = self._choices[index]
-            top = SHADOW_PAD + LIST_PADDING + row * ITEM_HEIGHT
+            top = TOP_PAD + LIST_PADDING + row * ITEM_HEIGHT
             if index == self._hover:
                 fill = mix(pal.card, pal.primary_soft, 0.55)
                 chip = rounded_box(
@@ -165,7 +169,7 @@ class PopupList(tk.Toplevel):
             )
 
     def _index_at(self, y: int) -> int:
-        row = (y - SHADOW_PAD - LIST_PADDING) // ITEM_HEIGHT
+        row = (y - TOP_PAD - LIST_PADDING) // ITEM_HEIGHT
         index = self._offset + row
         if 0 <= row < MAX_VISIBLE and 0 <= index < len(self._choices):
             return index
@@ -174,7 +178,7 @@ class PopupList(tk.Toplevel):
     def _inside(self, x: int, y: int) -> bool:
         return (
             SHADOW_PAD <= x <= SHADOW_PAD + self._inner_width
-            and SHADOW_PAD <= y <= SHADOW_PAD + self._inner_height
+            and TOP_PAD <= y <= TOP_PAD + self._inner_height
         )
 
     def _on_motion(self, event: tk.Event) -> None:

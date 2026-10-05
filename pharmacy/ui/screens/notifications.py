@@ -17,6 +17,7 @@ from pharmacy.ui.widgets.button import Button, measure_button
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.common import photo
 from pharmacy.ui.widgets.controls import Segmented
+from pharmacy.ui.widgets.highlight import Highlight
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
@@ -150,15 +151,22 @@ class NotificationsScreen(tk.Frame):
     def _row(self, item: Notification) -> None:
         pal = palette()
         background = pal.card if item.is_read else pal.unread_bg
-        row = tk.Frame(self._card.body, bg=background)
+        # Подсветка непрочитанного: скруглённая плашка, а не прямоугольник у края
+        # карточки. У прочитанных строк плашка того же цвета, что карточка, поэтому
+        # размеры строк одинаковые.
+        row = Highlight(self._card.body, background)
         row.pack(fill="x")
         if not item.is_read:
-            self._dot(row, background)
-        inner = tk.Frame(row, bg=background)
+            self._dot(row.body, background)
+        inner = tk.Frame(row.body, bg=background)
         inner.pack(
             fill="x",
-            padx=ROW_PADDING_X - self._card.inner_inset - SHADOW_PAD,
-            pady=ROW_PADDING_Y,
+            padx=ROW_PADDING_X
+            - self._card.inner_inset
+            - SHADOW_PAD
+            - row.padding_x
+            + 4,
+            pady=ROW_PADDING_Y - row.padding_y,
         )
         IconBox(
             inner,
@@ -212,7 +220,7 @@ class NotificationsScreen(tk.Frame):
         )
         canvas.image = photo(rounded_box(DOT, DOT, DOT // 2, palette().primary), canvas)
         canvas.create_image(0, 0, image=canvas.image, anchor="nw")
-        canvas.place(x=6, rely=0.5, anchor="w")
+        canvas.place(x=0, rely=0.5, anchor="w")
 
     def _build_close(
         self, inner: tk.Frame, background: str, item: Notification

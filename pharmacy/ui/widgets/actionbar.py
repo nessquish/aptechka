@@ -44,12 +44,34 @@ class ActionBar(tk.Canvas):
         )
         self.bind("<Configure>", self._on_resize)
         if card is not None:
-            card.on_redraw(lambda: self.winfo_exists() and self.after_idle(self._draw))
+            card.on_redraw(self._redraw)
+
+    def _redraw(self) -> None:
+        if self.winfo_exists():
+            self._draw()
 
     def set_text(self, text: str) -> None:
         """Меняет текст слева."""
         self._text = text
         self._draw()
+
+    def show(self, text: str, before: Optional[tk.Misc] = None) -> None:
+        """Показывает панель у верхнего края карточки с текстом слева.
+
+        Args:
+            text: Текст слева («Выбрано: 2»).
+            before: Виджет, перед которым панель вставляется (шапка таблицы).
+        """
+        self._text = text
+        if self._card is not None:
+            self._card.set_band(HEIGHT, palette().bulk_bg)
+        if not self.winfo_ismapped():
+            self.pack(fill="x", before=before)
+        self._draw()
+
+    def hide(self) -> None:
+        """Прячет панель (полосу карточки возвращает тот, кто её занимал раньше)."""
+        self.pack_forget()
 
     def _on_resize(self, event: tk.Event) -> None:
         if event.width != self._width:
@@ -60,15 +82,13 @@ class ActionBar(tk.Canvas):
         if self._width <= 0:
             return
         pal = palette()
-        radius = theme.CARD_RADIUS - 1
-        shape = rounded_box(self._width, HEIGHT + radius, radius, pal.bulk_bg).crop(
-            (0, 0, self._width, HEIGHT)
-        )
-        under = self._card.capture(self) if self._card is not None else None
-        if under is not None:
-            under.alpha_composite(shape)
-            shape = under
-        self._image = photo(shape, self)
+        picture = self._card.capture(self) if self._card is not None else None
+        if picture is None:
+            radius = theme.CARD_RADIUS - 1
+            picture = rounded_box(
+                self._width, HEIGHT + radius, radius, pal.bulk_bg
+            ).crop((0, 0, self._width, HEIGHT))
+        self._image = photo(picture, self)
         self.delete("shape", "label")
         self.create_image(0, 0, image=self._image, anchor="nw", tags="shape")
         self.tag_lower("shape")
