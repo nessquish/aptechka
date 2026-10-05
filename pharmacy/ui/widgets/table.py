@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence, Union
+from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from pharmacy.ui import theme
 from pharmacy.ui.drawing import rounded_box
@@ -67,6 +67,8 @@ class DataTable(tk.Frame):
         super().__init__(master, bg=parent_bg(master))
         self._columns = list(columns)
         self._sorted: Optional[int] = None
+        self._rounded_top = True
+        self._header_widgets: Dict[int, tk.Widget] = {}
         self._images: list = []
         self._width = 0
         self._header_height = line_height(self, "small_medium") + 2 * HEADER_PADDING_Y
@@ -87,6 +89,30 @@ class DataTable(tk.Frame):
         self._sorted = index
         if self._width:
             self._draw_header()
+
+    def set_rounded_top(self, rounded: bool) -> None:
+        """Скругляет верхние углы шапки (выключается, когда над таблицей панель)."""
+        self._rounded_top = rounded
+        if self._width:
+            self._draw_header()
+
+    def set_header_widget(
+        self, index: int, factory: Callable[[tk.Misc], tk.Widget]
+    ) -> tk.Widget:
+        """Кладёт виджет в шапку вместо заголовка столбца (общий флажок).
+
+        Args:
+            index: Номер столбца.
+            factory: Создаёт виджет по родителю (холсту шапки).
+
+        Returns:
+            Созданный виджет.
+        """
+        widget = factory(self._header)
+        self._header_widgets[index] = widget
+        if self._width:
+            self._draw_header()
+        return widget
 
     def clear(self) -> None:
         """Удаляет все строки."""
@@ -198,7 +224,7 @@ class DataTable(tk.Frame):
         canvas = self._header
         canvas.delete("all")
         self._images = []
-        radius = theme.CARD_RADIUS - 1
+        radius = theme.CARD_RADIUS - 1 if self._rounded_top else 0
         shape = rounded_box(
             self._width, self._header_height + radius, radius, pal.table_head
         )
@@ -207,7 +233,12 @@ class DataTable(tk.Frame):
         )
         canvas.create_image(0, 0, image=self._images[0], anchor="nw")
         middle = self._header_height / 2
-        for index, (column, left) in enumerate(zip(self._columns, self._fractions())):
+        lefts = self._fractions()
+        for index, widget in self._header_widgets.items():
+            canvas.create_window(
+                lefts[index] + CELL_PADDING_X, middle, window=widget, anchor="w"
+            )
+        for index, (column, left) in enumerate(zip(self._columns, lefts)):
             item = canvas.create_text(
                 left + CELL_PADDING_X,
                 middle,

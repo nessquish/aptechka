@@ -1,4 +1,4 @@
-"""Модальное окно поверх затемнённого окна приложения."""
+"""Модальные окна поверх затемнённого окна приложения."""
 
 import tkinter as tk
 from typing import Callable, Optional
@@ -36,12 +36,113 @@ def _scrim_image(host: tk.Misc, width: int, height: int) -> Optional[Image.Image
     return Image.alpha_composite(shot, shade)
 
 
-class Dialog:
+class Modal:
+    """Белое окно по центру на затемнённом фоне, в которое кладётся содержимое.
+
+    Закрывается по Esc. Пока окно открыто, остальной интерфейс закрыт
+    затемнением и не реагирует на нажатия. Содержимое добавляется в ``body``.
+
+    Attributes:
+        body: Рамка для содержимого окна (внутри отступов).
+    """
+
+    def __init__(
+        self,
+        host: tk.Misc,
+        width: int = 400,
+        on_enter: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Открывает пустое окно.
+
+        Args:
+            host: Окно или экран, поверх которого открывается диалог.
+            width: Ширина окна.
+            on_enter: Что вызвать по клавише Enter (необязательно).
+        """
+        host.update_idletasks()
+        pal = palette()
+        self._host = host
+        self._images: list = []
+        self.width = width
+        shot = _scrim_image(host, host.winfo_width(), host.winfo_height())
+        self._scrim = tk.Canvas(
+            host,
+            bd=0,
+            highlightthickness=0,
+            bg=mix(pal.bg, pal.overlay, SCRIM_OPACITY),
+        )
+        if shot is not None:
+            self._images.append(photo(shot, self._scrim))
+            self._scrim.create_image(0, 0, image=self._images[-1], anchor="nw")
+        self._scrim.place(x=0, y=0, relwidth=1, relheight=1)
+        self._scrim.bind("<Button-1>", lambda _event: "break")
+
+        self._card = Card(host, radius=theme.MODAL_RADIUS, elevated=True, backdrop=shot)
+        self._card.place(relx=0.5, rely=0.5, anchor="center")
+        self.body = tk.Frame(self._card.body, bg=pal.card, padx=PADDING, pady=PADDING)
+        self.body.pack()
+        tk.Frame(self.body, bg=pal.card, width=width - 2 * PADDING, height=1).pack()
+
+        self._card.focus_set()
+        toplevel = host.winfo_toplevel()
+        keys = [("<Escape>", self.close)]
+        if on_enter is not None:
+            keys.append(("<Return>", on_enter))
+        self._bindings = [
+            (sequence, toplevel.bind(sequence, lambda _event, c=call: c(), add="+"))
+            for sequence, call in keys
+        ]
+
+    def add_title(self, title: str) -> None:
+        """Добавляет заголовок."""
+        pal = palette()
+        tk.Label(
+            self.body,
+            text=title,
+            bg=pal.card,
+            fg=pal.ink,
+            font=font_spec("modal_title", self._host),
+            padx=0,
+        ).pack(anchor="w", pady=(0, 8))
+
+    def add_text(self, message: str, bottom: int = 0) -> None:
+        """Добавляет пояснение под заголовком."""
+        pal = palette()
+        tk.Label(
+            self.body,
+            text=message,
+            bg=pal.card,
+            fg=pal.ink_2,
+            font=font_spec("body", self._host),
+            justify="left",
+            anchor="w",
+            wraplength=self.width - 2 * PADDING,
+            padx=0,
+        ).pack(anchor="w", fill="x", pady=(0, bottom))
+
+    def footer(self) -> tk.Frame:
+        """Создаёт ряд для кнопок справа внизу окна."""
+        pal = palette()
+        row = tk.Frame(self.body, bg=pal.card)
+        row.pack(anchor="e", pady=(16, 0))
+        return row
+
+    def close(self) -> None:
+        """Закрывает окно и снимает затемнение."""
+        if not self._card.winfo_exists():
+            return
+        toplevel = self._host.winfo_toplevel()
+        for sequence, binding_id in self._bindings:
+            toplevel.unbind(sequence, binding_id)
+        self._card.destroy()
+        self._scrim.destroy()
+
+
+class Dialog(Modal):
     """Окно с заголовком, текстом и кнопками «Отмена» и подтверждения.
 
     Закрывается по «Отмена», по подтверждению и по клавише Esc. Enter
-    подтверждает действие. Пока окно открыто, остальной интерфейс закрыт
-    затемнением и не реагирует на нажатия.
+    подтверждает действие.
     """
 
     def __init__(
@@ -69,72 +170,23 @@ class Dialog:
             warning: Показать красный значок восклицания над заголовком.
             width: Ширина окна.
         """
-        host.update_idletasks()
-        pal = palette()
-        self._host = host
+        super().__init__(host, width, on_enter=self._confirm)
         self._on_confirm = on_confirm
-        self._images: list = []
-        shot = _scrim_image(host, host.winfo_width(), host.winfo_height())
-        self._scrim = tk.Canvas(
-            host,
-            bd=0,
-            highlightthickness=0,
-            bg=mix(pal.bg, pal.overlay, SCRIM_OPACITY),
-        )
-        if shot is not None:
-            self._images.append(photo(shot, self._scrim))
-            self._scrim.create_image(0, 0, image=self._images[-1], anchor="nw")
-        self._scrim.place(x=0, y=0, relwidth=1, relheight=1)
-        self._scrim.bind("<Button-1>", lambda _event: "break")
-
-        self._card = Card(host, radius=theme.MODAL_RADIUS, elevated=True, backdrop=shot)
-        self._card.place(relx=0.5, rely=0.5, anchor="center")
-        body = tk.Frame(self._card.body, bg=pal.card, padx=PADDING, pady=PADDING)
-        body.pack()
-        tk.Frame(body, bg=pal.card, width=width - 2 * PADDING, height=1).pack()
         if warning:
-            self._build_warning(body)
-        tk.Label(
-            body,
-            text=title,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("modal_title", host),
-            padx=0,
-        ).pack(anchor="w", pady=(0, 8))
-        tk.Label(
-            body,
-            text=message,
-            bg=pal.card,
-            fg=pal.ink_2,
-            font=font_spec("body", host),
-            justify="left",
-            anchor="w",
-            wraplength=width - 2 * PADDING,
-            padx=0,
-        ).pack(anchor="w", fill="x")
-        buttons = tk.Frame(body, bg=pal.card)
-        buttons.pack(anchor="e", pady=(16, 0))
+            self._build_warning()
+        self.add_title(title)
+        self.add_text(message)
+        buttons = self.footer()
         Button(buttons, cancel_text, command=self.close).pack(side="left", padx=(0, 4))
         Button(
             buttons, confirm_text, command=self._confirm, variant=confirm_variant
         ).pack(side="left")
 
-        self._card.focus_set()
-        toplevel = host.winfo_toplevel()
-        self._bindings = [
-            (sequence, toplevel.bind(sequence, lambda _event, c=call: c(), add="+"))
-            for sequence, call in (
-                ("<Escape>", self.close),
-                ("<Return>", self._confirm),
-            )
-        ]
-
-    def _build_warning(self, body: tk.Frame) -> None:
+    def _build_warning(self) -> None:
         """Рисует красный круг с восклицательным знаком над заголовком."""
         pal = palette()
         canvas = tk.Canvas(
-            body,
+            self.body,
             width=WARN_SIZE,
             height=WARN_SIZE,
             bd=0,
@@ -154,13 +206,3 @@ class Dialog:
     def _confirm(self) -> None:
         self.close()
         self._on_confirm()
-
-    def close(self) -> None:
-        """Закрывает окно и снимает затемнение."""
-        if not self._card.winfo_exists():
-            return
-        toplevel = self._host.winfo_toplevel()
-        for sequence, binding_id in self._bindings:
-            toplevel.unbind(sequence, binding_id)
-        self._card.destroy()
-        self._scrim.destroy()

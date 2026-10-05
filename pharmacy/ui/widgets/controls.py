@@ -196,12 +196,22 @@ class Checkbox(tk.Canvas):
         master: tk.Misc,
         value: bool = False,
         on_change: Optional[Callable[[bool], None]] = None,
+        background: Optional[str] = None,
     ) -> None:
+        """Создаёт флажок.
+
+        Args:
+            master: Родительский виджет.
+            value: Отмечен ли флажок.
+            on_change: Вызывается с новым состоянием после нажатия.
+            background: Цвет под флажком, если он отличается от цвета родителя
+                (например, у флажка в шапке таблицы).
+        """
         super().__init__(
             master,
             bd=0,
             highlightthickness=0,
-            bg=parent_bg(master),
+            bg=background or parent_bg(master),
             width=self.SIZE,
             height=self.SIZE,
             cursor="hand2",
