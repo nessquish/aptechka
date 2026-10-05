@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Optional
 
 from pharmacy.models import User
 from pharmacy.services.container import Services
+from pharmacy.services.status import ProductStatus
 from pharmacy.ui import sections, theme
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.history import HistoryScreen
@@ -110,6 +111,18 @@ class MainShell(tk.Frame):
         self._scroll.scroll_to_top()
         self._sidebar.set_active(section)
         self.refresh_counters()
+
+    def open_kit(self, status: Optional[ProductStatus] = None) -> None:
+        """Открывает «Мою аптечку», при необходимости сразу с фильтром по состоянию."""
+        self.show(
+            lambda parent, shell: MyKitScreen(parent, shell, status), sections.MY_KIT
+        )
+
+    def open_shopping(self, tab: int = 0) -> None:
+        """Открывает список покупок на нужной вкладке."""
+        self.show(
+            lambda parent, shell: ShoppingScreen(parent, shell, tab), sections.SHOPPING
+        )
 
     def open_product(self, product_id: int) -> None:
         """Открывает карточку товара."""

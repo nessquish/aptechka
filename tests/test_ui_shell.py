@@ -5,8 +5,14 @@ from typing import List, Type
 
 from pharmacy.db.seed import seed_demo
 from pharmacy.ui import sections
+from pharmacy.services.status import ProductStatus
 from pharmacy.ui.screens.dashboard import DashboardScreen
-from pharmacy.ui.screens.shell import MainShell, SectionStub
+from pharmacy.ui.screens.my_kit import MyKitScreen
+from pharmacy.ui.screens.notifications import NotificationsScreen
+from pharmacy.ui.screens.product_card import ProductCardScreen
+from pharmacy.ui.screens.shell import MainShell
+from pharmacy.ui.screens.shopping import ShoppingScreen
+from pharmacy.ui.widgets.link import Link
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.dialog import Dialog
 from tests.test_ui_app import AppTestCase
@@ -44,18 +50,16 @@ class ShellTest(ShellTestCase):
         self.assertIsInstance(self.shell, MainShell)
         self.assertIsInstance(self.shell._current, DashboardScreen)
 
-    def test_sections_without_screen_show_stub(self):
-        unfinished = [n for n in sections.ALL if n not in self.shell._sections]
-        for name in unfinished:
-            self.shell.navigate(name)
-            self.settle()
-            self.assertIsInstance(self.shell._current, SectionStub, name)
-
-    def test_every_menu_item_opens_something(self):
+    def test_every_menu_item_has_its_own_screen(self):
         for name in sections.ALL:
+            self.assertIn(name, self.shell._sections, name)
             self.shell.navigate(name)
             self.settle()
             self.assertIsNotNone(self.shell._current)
+
+    def test_unknown_section_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.shell.navigate("Несуществующий")
 
     def test_navigation_replaces_the_screen(self):
         self.shell.navigate(sections.HISTORY)
@@ -101,6 +105,75 @@ class DashboardScreenTest(ShellTestCase):
         disabled = [b for b in self.buttons("В списке") if not b.enabled]
         self.assertEqual(len(disabled), len(self.buttons("В списке")))
         self.assertTrue(disabled)
+
+
+class DashboardLinksTest(ShellTestCase):
+    def click_caption(self, caption: str) -> None:
+        """Нажимает на подпись счётчика (как мышью по карточке)."""
+        label = next(
+            w
+            for w in find_all(self.shell._current, tk.Label)
+            if w.cget("text") == caption
+        )
+        label.event_generate("<Button-1>")
+        self.settle()
+
+    def name_links(self):
+        return [w for w in find_all(self.shell._current, Link)]
+
+    def test_total_card_opens_the_kit(self):
+        self.click_caption("Товаров в аптечке")
+        self.assertIsInstance(self.shell._current, MyKitScreen)
+        self.assertIsNone(self.shell._current._status)
+
+    def test_expired_card_opens_the_kit_filtered_by_status(self):
+        self.click_caption("Просрочено")
+        kit = self.shell._current
+        self.assertIsInstance(kit, MyKitScreen)
+        self.assertEqual(kit._status, ProductStatus.EXPIRED)
+        self.assertEqual(len(kit._table._body.winfo_children()), 2)
+
+    def test_attention_card_opens_notifications(self):
+        self.click_caption("Требуют внимания")
+        self.assertIsInstance(self.shell._current, NotificationsScreen)
+
+    def test_shopping_card_opens_the_open_tab(self):
+        self.click_caption("В списке покупок")
+        page = self.shell._current
+        self.assertIsInstance(page, ShoppingScreen)
+        self.assertEqual(page._filter, 1)
+        self.assertEqual(page._tabs.active, 1)
+
+    def test_cards_show_the_hand_cursor(self):
+        label = next(
+            w
+            for w in find_all(self.shell._current, tk.Label)
+            if w.cget("text") == "Просрочено"
+        )
+        self.assertEqual(str(label.cget("cursor")), "hand2")
+
+    def test_product_names_in_both_lists_are_links(self):
+        names = {link.cget("text") for link in self.name_links()}
+        attention = self.services.dashboard.summary(self.app.user.id).attention
+        recent = self.services.dashboard.summary(self.app.user.id).recent_products
+        for view in attention + recent:
+            self.assertIn(view.product.name, names)
+
+    def test_name_link_opens_the_right_card(self):
+        link = next(w for w in self.name_links() if w.cget("text") == "Ибупрофен")
+        link.event_generate("<Button-1>")
+        self.settle()
+        card = self.shell._current
+        self.assertIsInstance(card, ProductCardScreen)
+        self.assertEqual(card._view.product.name, "Ибупрофен")
+
+    def test_recent_list_links_open_cards_too(self):
+        recent = self.services.dashboard.summary(self.app.user.id).recent_products
+        target = recent[0].product
+        links = [w for w in self.name_links() if w.cget("text") == target.name]
+        links[-1].event_generate("<Button-1>")
+        self.settle()
+        self.assertEqual(self.shell._current._view.product.id, target.id)
 
 
 class DialogTest(ShellTestCase):

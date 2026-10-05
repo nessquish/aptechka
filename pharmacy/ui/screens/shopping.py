@@ -51,13 +51,20 @@ def _created(item: ShoppingItem) -> str:
 class ShoppingScreen(tk.Frame):
     """Таблица позиций с фильтрами-вкладками, выбором строк и действиями над ними."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell") -> None:
+    def __init__(self, master: tk.Misc, shell: "MainShell", tab: int = 0) -> None:
+        """Создаёт экран.
+
+        Args:
+            master: Родительский виджет.
+            shell: Оболочка главного окна.
+            tab: Выбранная вкладка: 0 все, 1 не куплено, 2 куплено.
+        """
         pal = palette()
         super().__init__(master, bg=pal.bg)
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
-        self._filter = 0
+        self._filter = tab
         self._selected: Set[int] = set()
         self._visible: List[ShoppingItem] = []
         header = PageHeader(self, "Список покупок")

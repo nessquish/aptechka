@@ -25,8 +25,17 @@ if TYPE_CHECKING:
 STAT_GAP = 14 - 2 * CARD_SHADOW_PAD  # расстояние между карточками минус поля теней
 COLUMN_GAP = 16 - 2 * CARD_SHADOW_PAD
 LEFT_WEIGHT, RIGHT_WEIGHT = 16, 10  # колонки 1.6fr и 1fr из макета
+OPEN_TAB = 1  # вкладка «Не куплено» в списке покупок
 ROW_PADDING_X = 18
 ROW_PADDING_Y = 8
+
+
+def _make_clickable(widget: tk.Misc, command: Callable[[], None]) -> None:
+    """Делает виджет и всё, что в нём лежит, нажимаемым (рука вместо стрелки)."""
+    widget.configure(cursor="hand2")
+    widget.bind("<Button-1>", lambda _event: command(), add="+")
+    for child in widget.winfo_children():
+        _make_clickable(child, command)
 
 
 def _detail(view: ProductView) -> str:
@@ -89,13 +98,32 @@ class DashboardScreen(tk.Frame):
         pal = palette()
         row = tk.Frame(self, bg=pal.bg)
         row.pack(fill="x")
+        shell = self._shell
         stats = (
-            ("cross", "primary", summary.total, "Товаров в аптечке"),
-            ("alert", "amber", summary.attention_total, "Требуют внимания"),
-            ("x", "red", summary.expired, "Просрочено"),
-            ("cart", "green", summary.shopping_open, "В списке покупок"),
+            ("cross", "primary", summary.total, "Товаров в аптечке", shell.open_kit),
+            (
+                "alert",
+                "amber",
+                summary.attention_total,
+                "Требуют внимания",
+                lambda: shell.navigate(sections.NOTIFICATIONS),
+            ),
+            (
+                "x",
+                "red",
+                summary.expired,
+                "Просрочено",
+                lambda: shell.open_kit(ProductStatus.EXPIRED),
+            ),
+            (
+                "cart",
+                "green",
+                summary.shopping_open,
+                "В списке покупок",
+                lambda: shell.open_shopping(OPEN_TAB),
+            ),
         )
-        for column, (icon, tone, value, caption) in enumerate(stats):
+        for column, (icon, tone, value, caption, command) in enumerate(stats):
             row.columnconfigure(column, weight=1, uniform="stat")
             card = Card(row)
             card.grid(
@@ -105,6 +133,7 @@ class DashboardScreen(tk.Frame):
                 padx=(0 if column == 0 else STAT_GAP, 0),
             )
             self._fill_stat(card, icon, tone, value, caption)
+            _make_clickable(card, command)
 
     def _fill_stat(
         self, card: Card, icon: str, tone: str, value: int, caption: str
@@ -218,15 +247,7 @@ class DashboardScreen(tk.Frame):
         ).pack(side="left", padx=(SHADOW_PAD, 12))
         texts = tk.Frame(row, bg=pal.card)
         texts.pack(side="left", fill="x", expand=True)
-        tk.Label(
-            texts,
-            text=view.product.name,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("strong", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
+        self._product_link(texts, view).pack(anchor="w")
         tk.Label(
             texts,
             text=_detail(view),
@@ -271,15 +292,7 @@ class DashboardScreen(tk.Frame):
             added = format_user_date(
                 datetime.strptime(product.created_at[:10], "%Y-%m-%d").date()
             )
-            tk.Label(
-                row,
-                text=product.name,
-                bg=pal.card,
-                fg=pal.ink,
-                font=font_spec("strong", self),
-                padx=0,
-                pady=0,
-            ).pack(anchor="w", padx=SHADOW_PAD)
+            self._product_link(row, view).pack(anchor="w", padx=SHADOW_PAD)
             tk.Label(
                 row,
                 text=f"{labels.short_category(product.category_name)} · {added}",
@@ -289,6 +302,16 @@ class DashboardScreen(tk.Frame):
                 padx=0,
                 pady=0,
             ).pack(anchor="w", padx=SHADOW_PAD)
+
+    def _product_link(self, master: tk.Misc, view: ProductView) -> Link:
+        """Название товара, по нажатию на которое открывается его карточка."""
+        product_id = view.product.id
+        return Link(
+            master,
+            view.product.name,
+            lambda: self._shell.open_product(product_id),
+            style="strong",
+        )
 
     def _add_to_list(self, product_id: int) -> None:
         """Добавляет товар в список покупок и обновляет экран."""

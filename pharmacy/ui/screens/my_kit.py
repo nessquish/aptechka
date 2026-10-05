@@ -52,7 +52,20 @@ EMPTY_ICON = 64
 class MyKitScreen(tk.Frame):
     """Список товаров с поиском, фильтрами, сортировкой и страницами."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell") -> None:
+    def __init__(
+        self,
+        master: tk.Misc,
+        shell: "MainShell",
+        status: Optional[ProductStatus] = None,
+    ) -> None:
+        """Создаёт экран.
+
+        Args:
+            master: Родительский виджет.
+            shell: Оболочка главного окна.
+            status: Фильтр по состоянию, выбранный с самого начала
+                (например, «Просрочен» при переходе с главной).
+        """
         pal = palette()
         super().__init__(master, bg=pal.bg)
         self._shell = shell
@@ -60,7 +73,7 @@ class MyKitScreen(tk.Frame):
         self._user = shell.user
         self._search = ""
         self._category: Optional[int] = None
-        self._status: Optional[ProductStatus] = None
+        self._status = status
         self._sort = SORTS[0][0]
         self._page = 1
         self._search_job: Optional[str] = None
@@ -162,7 +175,7 @@ class MyKitScreen(tk.Frame):
             side="left", padx=(0, 8 - 2 * SHADOW_PAD)
         )
         states = [(None, "Любое состояние")] + [(s, s.label) for s in ProductStatus]
-        Select(bar, states, None, compact=True, on_change=self._on_status).pack(
+        Select(bar, states, self._status, compact=True, on_change=self._on_status).pack(
             side="left"
         )
         Select(
