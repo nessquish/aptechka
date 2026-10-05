@@ -24,6 +24,7 @@ class Link(tk.Label):
         command: Callable[[], None],
         style: str = "small_medium",
         icon: Optional[str] = None,
+        icon_side: str = "right",
     ) -> None:
         """Создаёт ссылку.
 
@@ -32,7 +33,8 @@ class Link(tk.Label):
             text: Текст ссылки.
             command: Что вызвать при нажатии.
             style: Стиль текста из ``theme.TYPOGRAPHY``.
-            icon: Название иконки справа от текста (например, стрелка).
+            icon: Название иконки рядом с текстом (например, стрелка).
+            icon_side: С какой стороны от текста иконка: ``right`` или ``left``.
         """
         pal = palette()
         super().__init__(
@@ -47,7 +49,8 @@ class Link(tk.Label):
         if icon:
             glyph = render_icon(icon, ICON_SIZE, pal.primary)
             padded = Image.new("RGBA", (ICON_SIZE + ICON_GAP, ICON_SIZE), (0, 0, 0, 0))
-            padded.paste(glyph, (ICON_GAP, 0))
+            on_left = icon_side == "left"
+            padded.paste(glyph, (0 if on_left else ICON_GAP, 0))
             self._icon = photo(padded, self)
-            self.configure(image=self._icon, compound="right")
+            self.configure(image=self._icon, compound=icon_side)
         self.bind("<Button-1>", lambda _event: command())

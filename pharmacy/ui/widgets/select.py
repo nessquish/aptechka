@@ -16,6 +16,8 @@ from pharmacy.ui.widgets.popup import Option, PopupList
 
 OptionLike = Union[str, Option]
 COMPACT_TEXT_INSET = 12
+COMPACT_ARROW_GAP = 18  # расстояние между текстом и стрелкой в фильтре
+COMPACT_ARROW = ICON_SIZE - 4
 
 
 def _normalize(options: Sequence[OptionLike]) -> list:
@@ -66,11 +68,10 @@ class Select(LabeledBox):
         self._on_change = on_change
         self._popup: Optional[PopupList] = None
         self._inset = COMPACT_TEXT_INSET if compact else TEXT_INSET
-        if compact:
-            self._canvas.configure(
-                width=(width or self._natural_width()) + 2 * RING_PAD
-            )
-            self._canvas.pack_configure(fill="none", anchor="w")
+        self._fixed_width = width
+        if width is not None:
+            self.set_width(width)
+        self._fit_width()
         self._canvas.configure(cursor="hand2")
         self._canvas.bind("<ButtonPress-1>", self._toggle)
 
@@ -86,11 +87,13 @@ class Select(LabeledBox):
     def set(self, value: object) -> None:
         """Выбирает вариант по значению."""
         self._value = value
+        self._fit_width()
         self._draw()
 
     def set_options(self, options: Sequence[OptionLike]) -> None:
         """Заменяет список вариантов."""
         self._choices = _normalize(options)
+        self._fit_width()
         self._draw()
 
     def _label_of(self, value: object) -> str:
@@ -100,15 +103,15 @@ class Select(LabeledBox):
         return ""
 
     def _natural_width(self) -> int:
-        """Ширина, в которую помещается самый длинный вариант."""
-        longest = max(
-            (
-                text_width(self, self._prefix + label, "body")
-                for _, label in self._choices
-            ),
-            default=0,
-        )
-        return longest + self._inset + 20 + ICON_SIZE + ICON_INSET
+        """Ширина по выбранному значению: текст, отступы и стрелка."""
+        shown = self._label_of(self._value) or self._placeholder
+        text = text_width(self, self._prefix + shown, "body")
+        return text + 2 * COMPACT_TEXT_INSET + COMPACT_ARROW_GAP + COMPACT_ARROW
+
+    def _fit_width(self) -> None:
+        """Подгоняет ширину фильтра под выбранное значение (как в макете)."""
+        if self._compact and self._fixed_width is None:
+            self.set_width(self._natural_width())
 
     def _toggle(self, _event: tk.Event) -> None:
         if self._popup is not None:
@@ -123,6 +126,7 @@ class Select(LabeledBox):
     def _pick(self, value: object) -> None:
         self._value = value
         self.clear_error()
+        self._fit_width()
         self._draw()
         if self._on_change is not None:
             self._on_change(value)

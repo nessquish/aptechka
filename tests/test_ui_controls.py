@@ -260,7 +260,7 @@ class DataTableTest(WidgetTestCase):
             self.root,
             [
                 Column("Название", 3),
-                Column("Срок", 2, sorted=True),
+                Column("Срок", 2),
                 Column("", fixed=40),
             ],
         )

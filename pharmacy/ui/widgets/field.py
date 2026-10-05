@@ -39,6 +39,7 @@ class LabeledBox(tk.Frame):
         required: bool = False,
         height: int = theme.CONTROL_HEIGHT,
         compact: bool = False,
+        width: Optional[int] = None,
     ) -> None:
         """Создаёт рамку.
 
@@ -48,6 +49,8 @@ class LabeledBox(tk.Frame):
             required: Добавить красную звёздочку к подписи.
             height: Высота рамки без полей под тень.
             compact: Вид фильтра на панели: граница цвета карточек.
+            width: Ширина рамки. Если не задана, поле занимает всю ширину,
+                которую даёт родитель.
         """
         super().__init__(master, bg=parent_bg(master))
         pal = palette()
@@ -64,9 +67,12 @@ class LabeledBox(tk.Frame):
             bd=0,
             highlightthickness=0,
             bg=self.cget("bg"),
+            width=1,  # реальную ширину даёт родитель (по умолчанию у Canvas 378 px)
             height=height + 2 * RING_PAD,
         )
         self._canvas.pack(fill="x")
+        if width is not None:
+            self.set_width(width)
         self._error_label = tk.Label(
             self,
             bg=self.cget("bg"),
@@ -100,6 +106,11 @@ class LabeledBox(tk.Frame):
                 font=font_spec("label", self),
                 padx=0,
             ).pack(side="left")
+
+    def set_width(self, width: int) -> None:
+        """Фиксирует ширину рамки (без полей под тень)."""
+        self._canvas.configure(width=width + 2 * RING_PAD)
+        self._canvas.pack_configure(fill="none", anchor="w")
 
     # --- ошибка ---
 
@@ -209,6 +220,7 @@ class TextField(LabeledBox):
         readonly: bool = False,
         compact: bool = False,
         on_change: Optional[Callable[[], None]] = None,
+        width: Optional[int] = None,
     ) -> None:
         """Создаёт поле.
 
@@ -224,6 +236,7 @@ class TextField(LabeledBox):
             readonly: Только чтение: текст нельзя изменить.
             compact: Вид поля на панели фильтров.
             on_change: Вызывается после каждого изменения текста пользователем.
+            width: Ширина поля (по умолчанию на всю ширину родителя).
         """
         super().__init__(
             master,
@@ -231,6 +244,7 @@ class TextField(LabeledBox):
             required,
             height=AREA_HEIGHT if multiline else theme.CONTROL_HEIGHT,
             compact=compact,
+            width=width,
         )
         pal = palette()
         self._placeholder = placeholder

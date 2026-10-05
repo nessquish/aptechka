@@ -24,13 +24,11 @@ class Column:
     Attributes:
         title: Заголовок.
         weight: Относительная ширина столбца.
-        sorted: Показывать стрелку сортировки у заголовка.
         fixed: Ширина в пикселях вместо относительной (например, у флажков).
     """
 
     title: str
     weight: int = 1
-    sorted: bool = False
     fixed: Optional[int] = None
 
 
@@ -68,6 +66,7 @@ class DataTable(tk.Frame):
         """
         super().__init__(master, bg=parent_bg(master))
         self._columns = list(columns)
+        self._sorted: Optional[int] = None
         self._images: list = []
         self._width = 0
         self._header_height = line_height(self, "small_medium") + 2 * HEADER_PADDING_Y
@@ -82,6 +81,12 @@ class DataTable(tk.Frame):
         self._header.bind("<Configure>", self._on_resize)
         self._body = tk.Frame(self, bg=self.cget("bg"))
         self._body.pack(fill="x")
+
+    def set_sorted(self, index: Optional[int]) -> None:
+        """Показывает стрелку сортировки у столбца (None убирает стрелку)."""
+        self._sorted = index
+        if self._width:
+            self._draw_header()
 
     def clear(self) -> None:
         """Удаляет все строки."""
@@ -202,7 +207,7 @@ class DataTable(tk.Frame):
         )
         canvas.create_image(0, 0, image=self._images[0], anchor="nw")
         middle = self._header_height / 2
-        for column, left in zip(self._columns, self._fractions()):
+        for index, (column, left) in enumerate(zip(self._columns, self._fractions())):
             item = canvas.create_text(
                 left + CELL_PADDING_X,
                 middle,
@@ -211,7 +216,7 @@ class DataTable(tk.Frame):
                 fill=pal.ink_2,
                 font=font_spec("small_medium", self),
             )
-            if column.sorted:
+            if index == self._sorted:
                 right = canvas.bbox(item)[2] + 4
                 self._images.append(
                     photo(render_icon("arrow-down", SORT_ICON, pal.primary), canvas)
