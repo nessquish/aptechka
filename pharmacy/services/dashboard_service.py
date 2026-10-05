@@ -14,6 +14,7 @@ from pharmacy.services.status import STATUS_PRIORITY, ProductStatus
 
 ATTENTION_LIMIT = 5
 RECENT_HISTORY_LIMIT = 5
+RECENT_PRODUCTS_LIMIT = 5
 
 
 @dataclass
@@ -28,7 +29,9 @@ class DashboardSummary:
         expired: Сколько товаров просрочено.
         expiring: Сколько товаров скоро истекает.
         low_stock: Сколько товаров с низким остатком.
-        attention: Товары, требующие внимания, самые срочные первыми.
+        attention_total: Сколько товаров требуют внимания (все с проблемой).
+        attention: Пять самых срочных из них, самые срочные первыми.
+        recent_products: Последние добавленные товары, новые первыми.
         recent_history: Последние действия.
         unread_notifications: Число непрочитанных уведомлений.
         shopping_open: Сколько позиций в списке покупок ещё не куплено.
@@ -38,7 +41,9 @@ class DashboardSummary:
     expired: int = 0
     expiring: int = 0
     low_stock: int = 0
+    attention_total: int = 0
     attention: List[ProductView] = field(default_factory=list)
+    recent_products: List[ProductView] = field(default_factory=list)
     recent_history: List[HistoryRecord] = field(default_factory=list)
     unread_notifications: int = 0
     shopping_open: int = 0
@@ -84,7 +89,11 @@ class DashboardService:
             expired=count(ProductStatus.EXPIRED),
             expiring=count(ProductStatus.EXPIRING),
             low_stock=count(ProductStatus.LOW_STOCK),
+            attention_total=len(problem),
             attention=problem[:ATTENTION_LIMIT],
+            recent_products=self._products.list_products(
+                user_id, sort="added", today=today
+            )[:RECENT_PRODUCTS_LIMIT],
             recent_history=self._history.list_for_user(
                 user_id, limit=RECENT_HISTORY_LIMIT
             ),

@@ -110,6 +110,14 @@ class AddFromProductTest(ShoppingTestCase):
         self.service.add_from_product(self.user_id, product_id)
         self.assertEqual(self.count_rows("shopping_list"), 2)
 
+    def test_is_in_list_follows_purchase(self):
+        product_id = self.make_product()
+        self.assertFalse(self.service.is_in_list(self.user_id, product_id))
+        item = self.service.add_from_product(self.user_id, product_id)
+        self.assertTrue(self.service.is_in_list(self.user_id, product_id))
+        self.service.set_bought(self.user_id, item.id)
+        self.assertFalse(self.service.is_in_list(self.user_id, product_id))
+
     def test_unknown_product(self):
         with self.assertRaises(NotFoundError):
             self.service.add_from_product(self.user_id, 999)

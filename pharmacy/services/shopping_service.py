@@ -108,6 +108,10 @@ class ShoppingService:
             product.id,
         )
 
+    def is_in_list(self, user_id: int, product_id: int) -> bool:
+        """Проверяет, есть ли товар в списке покупок среди не купленных."""
+        return self._items.find_open_for_product(user_id, product_id) is not None
+
     def list_items(
         self, user_id: int, is_bought: Optional[bool] = None
     ) -> List[ShoppingItem]:

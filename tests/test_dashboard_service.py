@@ -75,6 +75,24 @@ class DashboardTest(DatabaseTestCase):
         names = [v.product.name for v in self.summary().attention]
         self.assertEqual(names, ["Просроченный", "Скоро раньше", "Скоро позже", "Мало"])
 
+    def test_attention_total_counts_all_problem_products(self):
+        for number in range(ATTENTION_LIMIT + 3):
+            self.make_product(f"Товар {number}", quantity=0)
+        self.make_product("Здоровый", expiry="2027-05-12")
+        result = self.summary()
+        self.assertEqual(result.attention_total, ATTENTION_LIMIT + 3)
+        self.assertEqual(len(result.attention), ATTENTION_LIMIT)
+
+    def test_recent_products_newest_first_and_limited(self):
+        for number in range(7):
+            product_id = self.make_product(f"Товар {number}")
+            self.db.execute(
+                "UPDATE products SET created_at = ? WHERE id = ?",
+                (f"2026-09-{10 + number} 12:00:00", product_id),
+            )
+        names = [v.product.name for v in self.summary().recent_products]
+        self.assertEqual(names, ["Товар 6", "Товар 5", "Товар 4", "Товар 3", "Товар 2"])
+
     def test_attention_is_limited(self):
         for number in range(ATTENTION_LIMIT + 3):
             self.make_product(f"Товар {number}", quantity=0)
