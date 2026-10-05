@@ -1,11 +1,17 @@
 """Ссылка: цветной текст, на который можно нажать."""
 
 import tkinter as tk
-from typing import Callable
+from typing import Callable, Optional
+
+from PIL import Image
 
 from pharmacy.ui.fonts import font_spec
+from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import palette
-from pharmacy.ui.widgets.common import parent_bg
+from pharmacy.ui.widgets.common import parent_bg, photo
+
+ICON_SIZE = 14
+ICON_GAP = 6
 
 
 class Link(tk.Label):
@@ -17,6 +23,7 @@ class Link(tk.Label):
         text: str,
         command: Callable[[], None],
         style: str = "small_medium",
+        icon: Optional[str] = None,
     ) -> None:
         """Создаёт ссылку.
 
@@ -25,6 +32,7 @@ class Link(tk.Label):
             text: Текст ссылки.
             command: Что вызвать при нажатии.
             style: Стиль текста из ``theme.TYPOGRAPHY``.
+            icon: Название иконки справа от текста (например, стрелка).
         """
         pal = palette()
         super().__init__(
@@ -34,5 +42,12 @@ class Link(tk.Label):
             fg=pal.primary,
             font=font_spec(style, master),
             cursor="hand2",
+            padx=0,
         )
+        if icon:
+            glyph = render_icon(icon, ICON_SIZE, pal.primary)
+            padded = Image.new("RGBA", (ICON_SIZE + ICON_GAP, ICON_SIZE), (0, 0, 0, 0))
+            padded.paste(glyph, (ICON_GAP, 0))
+            self._icon = photo(padded, self)
+            self.configure(image=self._icon, compound="right")
         self.bind("<Button-1>", lambda _event: command())

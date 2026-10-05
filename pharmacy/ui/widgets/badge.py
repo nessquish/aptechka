@@ -10,7 +10,7 @@ from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import palette
 from pharmacy.ui.widgets.common import parent_bg, photo
 
-TONES = ("red", "amber", "green", "gray")
+TONES = ("red", "amber", "green", "gray", "primary")
 PADDING_X = 9
 PADDING_Y = 3
 ICON_SIZE = 11
@@ -25,6 +25,7 @@ def tone_colors(tone: str) -> Tuple[str, str]:
         "amber": (pal.amber_bg, pal.amber),
         "green": (pal.green_bg, pal.green),
         "gray": (pal.gray_bg, pal.ink_2),
+        "primary": (pal.primary_soft, pal.primary),
     }[tone]
 
 
@@ -43,7 +44,7 @@ class Badge(tk.Canvas):
         Args:
             master: Родительский виджет.
             text: Текст.
-            tone: ``red``, ``amber``, ``green`` или ``gray``.
+            tone: ``red``, ``amber``, ``green``, ``gray`` или ``primary``.
             icon: Название иконки слева от текста.
         """
         super().__init__(master, bd=0, highlightthickness=0, bg=parent_bg(master))

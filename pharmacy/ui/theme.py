@@ -213,4 +213,9 @@ TYPOGRAPHY: Dict[str, Tuple[int, int]] = {
     "label": (11, 400),
     "badge": (10, 500),
     "number": (22, 700),
+    "sidebar_title": (17, 800),
+    "user_name": (12, 700),
+    "counter": (10, 700),
+    "modal_title": (16, 700),
+    "strong": (12, 700),
 }

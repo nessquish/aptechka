@@ -4,6 +4,8 @@ import math
 import tkinter as tk
 from typing import Optional, Tuple
 
+from PIL import Image
+
 from pharmacy.ui import theme
 from pharmacy.ui.drawing import Shadow, rounded_box
 from pharmacy.ui.theme import CARD_SHADOW_PAD, MODAL_SHADOW_PAD, palette
@@ -30,6 +32,8 @@ class Card(tk.Frame):
 
     Attributes:
         body: Рамка для содержимого карточки.
+        inner_inset: Отступ содержимого от видимого края карточки. Его вычитают
+            из отступов макета, чтобы расстояния на экране совпали с макетом.
     """
 
     def __init__(
@@ -38,6 +42,7 @@ class Card(tk.Frame):
         height: Optional[int] = None,
         radius: int = theme.CARD_RADIUS,
         elevated: bool = False,
+        backdrop: Optional[Image.Image] = None,
     ) -> None:
         """Создаёт карточку.
 
@@ -46,10 +51,14 @@ class Card(tk.Frame):
             height: Высота в пикселях. Если не задана, по содержимому.
             radius: Радиус скругления углов.
             elevated: Большая тень (окно входа, модальные окна).
+            backdrop: Изображение всего родителя, на которое ложится тень.
+                Нужно, когда карточка стоит над затемнением, а не над
+                однотонным фоном.
         """
         super().__init__(master, bg=parent_bg(master))
         self._radius = radius
         self._elevated = elevated
+        self._backdrop = backdrop
         self._shadow_pad = MODAL_SHADOW_PAD if elevated else CARD_SHADOW_PAD
         self._image = None
         self._background = tk.Canvas(
@@ -59,7 +68,8 @@ class Card(tk.Frame):
         self.body = tk.Frame(self, bg=palette().card)
         # Содержимое прямоугольное, поэтому отступаем от углов настолько,
         # чтобы оно не закрывало скруглённые края карточки.
-        inset = self._shadow_pad + BORDER + math.ceil(radius * CORNER_CLEARANCE)
+        self.inner_inset = BORDER + math.ceil(radius * CORNER_CLEARANCE)
+        inset = self._shadow_pad + self.inner_inset
         self.body.pack(fill="both", expand=True, padx=inset, pady=inset)
         if height is not None:
             self.configure(height=height)
@@ -81,6 +91,13 @@ class Card(tk.Frame):
             shadows=_shadows(self._elevated),
             pad=pad,
         )
+        if self._backdrop is not None:
+            left, top = self.winfo_x(), self.winfo_y()
+            base = self._backdrop.crop(
+                (left, top, left + event.width, top + event.height)
+            )
+            base.alpha_composite(shape)
+            shape = base
         self._image = photo(shape, self)
         self._background.delete("all")
         self._background.create_image(0, 0, image=self._image, anchor="nw")

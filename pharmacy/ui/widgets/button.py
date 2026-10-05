@@ -110,6 +110,11 @@ class Button(tk.Canvas):
         self._draw()
 
     @property
+    def text(self) -> str:
+        """Подпись кнопки."""
+        return self._text
+
+    @property
     def enabled(self) -> bool:
         """Нажимается ли кнопка."""
         return self._enabled
