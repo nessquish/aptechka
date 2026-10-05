@@ -29,6 +29,19 @@ def tone_colors(tone: str) -> Tuple[str, str]:
     }[tone]
 
 
+def measure_badge(widget: tk.Misc, text: str, icon: Optional[str] = None) -> int:
+    """Возвращает ширину плашки по тексту и иконке (для выравнивания столбцов)."""
+    content = text_width(widget, text, "badge")
+    if icon:
+        content += ICON_SIZE + ICON_GAP
+    return content + 2 * PADDING_X
+
+
+def badge_height(widget: tk.Misc) -> int:
+    """Возвращает высоту плашки."""
+    return line_height(widget, "badge") + 2 * PADDING_Y
+
+
 class Badge(tk.Canvas):
     """Небольшая цветная плашка с текстом и необязательной иконкой."""
 
@@ -51,11 +64,8 @@ class Badge(tk.Canvas):
         if tone not in TONES:
             raise ValueError(f"Неизвестный тон плашки: {tone}")
         fill, ink = tone_colors(tone)
-        content = text_width(self, text, "badge")
-        if icon:
-            content += ICON_SIZE + ICON_GAP
-        width = content + 2 * PADDING_X
-        height = line_height(self, "badge") + 2 * PADDING_Y
+        width = measure_badge(self, text, icon)
+        height = badge_height(self)
         self.configure(width=width, height=height)
         self._images = [
             photo(rounded_box(width, height, theme.BADGE_RADIUS, fill), self)

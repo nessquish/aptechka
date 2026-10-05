@@ -10,8 +10,8 @@ from pharmacy.services.status import ProductStatus
 from pharmacy.ui import labels, sections
 from pharmacy.ui.fonts import font_spec
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
-from pharmacy.ui.widgets.badge import Badge
-from pharmacy.ui.widgets.button import Button
+from pharmacy.ui.widgets.badge import Badge, badge_height, measure_badge
+from pharmacy.ui.widgets.button import Button, measure_button
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.link import Link
@@ -63,6 +63,11 @@ class DashboardScreen(tk.Frame):
         self._services = shell.services
         self._user = shell.user
         summary = self._services.dashboard.summary(self._user.id)
+        self._button_width = max(
+            measure_button(self, "В список", "sm"),
+            measure_button(self, "В списке", "sm", "check"),
+        )
+        self._badge_width = max(measure_badge(self, s.label) for s in ProductStatus)
         self._build_header()
         self._build_subtitle()
         self._build_stats(summary)
@@ -258,20 +263,28 @@ class DashboardScreen(tk.Frame):
             pady=0,
         ).pack(anchor="w")
         product_id = view.product.id
+        # Все кнопки и плашки в списке одной ширины и стоят в своих столбцах,
+        # чтобы края не «плыли» от строки к строке.
         if self._services.shopping.is_in_list(self._user.id, product_id):
-            action = Button(row, "В списке", size="sm", icon="check")
+            action = Button(
+                row, "В списке", size="sm", icon="check", width=self._button_width
+            )
             action.set_enabled(False)
         else:
             action = Button(
                 row,
                 "В список",
                 size="sm",
+                width=self._button_width,
                 command=lambda: self._add_to_list(product_id),
             )
         action.pack(side="right")
-        Badge(row, status.label, labels.STATUS_TONES[status]).pack(
-            side="right", padx=(0, 12)
+        slot = tk.Frame(
+            row, bg=pal.card, width=self._badge_width, height=badge_height(self)
         )
+        slot.pack_propagate(False)
+        slot.pack(side="right", padx=(0, 12))
+        Badge(slot, status.label, labels.STATUS_TONES[status]).pack(side="left")
 
     def _fill_recent(self, card: Card, views: List[ProductView]) -> None:
         pal = palette()

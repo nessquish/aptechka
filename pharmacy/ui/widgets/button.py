@@ -55,6 +55,21 @@ def _shadows(variant: str) -> Tuple[Shadow, ...]:
     return (Shadow(1, 3, pal.shadow, 0.08), Shadow(2, 6, pal.shadow, 0.05))
 
 
+def measure_button(
+    widget: tk.Misc, text: str, size: str = "md", icon: Optional[str] = None
+) -> int:
+    """Возвращает ширину кнопки по тексту и иконке (без полей под тень).
+
+    Нужна, чтобы сделать кнопки в одном столбце одинаковой ширины:
+    результат передаётся в параметр ``width`` кнопок.
+    """
+    spec = SIZES[size]
+    width = text_width(widget, text, spec.font)
+    if icon:
+        width += spec.icon + ICON_GAP
+    return width + 2 * spec.padding
+
+
 class Button(tk.Canvas):
     """Кнопка, нарисованная на Canvas.
 
@@ -91,6 +106,7 @@ class Button(tk.Canvas):
         self._text = text
         self._command = command
         self._variant = variant
+        self._size_name = size
         self._size = SIZES[size]
         self._icon = icon
         self._enabled = True
@@ -138,10 +154,7 @@ class Button(tk.Canvas):
 
     def _natural_width(self) -> int:
         """Ширина по тексту и иконке."""
-        width = text_width(self, self._text, self._size.font)
-        if self._icon:
-            width += self._size.icon + ICON_GAP
-        return width + 2 * self._size.padding
+        return measure_button(self, self._text, self._size_name, self._icon)
 
     def _state_colors(self) -> Tuple[str, str, str]:
         """Цвета с учётом наведения, нажатия и недоступности."""

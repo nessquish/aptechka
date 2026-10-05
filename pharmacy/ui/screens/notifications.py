@@ -12,8 +12,8 @@ from pharmacy.ui.drawing import rounded_box
 from pharmacy.ui.fonts import font_spec, line_height
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
-from pharmacy.ui.widgets.badge import Badge
-from pharmacy.ui.widgets.button import Button
+from pharmacy.ui.widgets.badge import Badge, measure_badge
+from pharmacy.ui.widgets.button import Button, measure_button
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.common import photo
 from pharmacy.ui.widgets.controls import Segmented
@@ -36,7 +36,8 @@ EXPIRY_KINDS = (NotificationKind.EXPIRED, NotificationKind.EXPIRING)
 ROW_PADDING_X = 18
 ROW_PADDING_Y = 9
 WHEN_WIDTH = 100
-ACTIONS_WIDTH = 290
+ADD_TO_LIST_TEXT = "В список покупок"
+IN_LIST_TEXT = "В списке покупок"
 DOT = 6
 EMPTY_TEXT = "Уведомлений нет"
 
@@ -59,6 +60,7 @@ class NotificationsScreen(tk.Frame):
         self._services = shell.services
         self._user = shell.user
         self._tab = 0
+        self._measure_actions()
         self._period = periods.ALL_TIME
         header = PageHeader(self, "Уведомления")
         header.pack(fill="x")
@@ -224,34 +226,47 @@ class NotificationsScreen(tk.Frame):
     def _build_actions(
         self, inner: tk.Frame, background: str, item: Notification
     ) -> None:
-        box = tk.Frame(
-            inner,
-            bg=background,
-            width=ACTIONS_WIDTH,
-            height=theme.CONTROL_HEIGHT_SMALL + 2 * SHADOW_PAD,
-        )
+        # Два столбца фиксированной ширины: «Открыть товар» и «В список покупок»
+        # (или плашка «В списке покупок»). У всех строк они стоят ровно друг под другом.
+        height = theme.CONTROL_HEIGHT_SMALL + 2 * SHADOW_PAD
+        box = tk.Frame(inner, bg=background, width=self._actions_width, height=height)
         box.pack_propagate(False)
         box.pack(side="right")
-        in_list = self._services.shopping.is_in_list(self._user.id, item.product_id)
-        if in_list:
-            Badge(box, "В списке покупок", "green", icon="check").pack(
-                side="right", padx=(8, 0)
-            )
-        else:
-            Button(
-                box,
-                "В список покупок",
-                command=lambda: self._add_to_list(item),
-                variant="primary",
-                size="sm",
-                icon="plus",
-            ).pack(side="right")
         Button(
             box,
             "Открыть товар",
             command=lambda: self._open_product(item),
             size="sm",
-        ).pack(side="right")
+            width=self._open_width,
+        ).pack(side="left")
+        slot = tk.Frame(
+            box, bg=background, width=self._list_width + 2 * SHADOW_PAD, height=height
+        )
+        slot.pack_propagate(False)
+        slot.pack(side="left")
+        if self._services.shopping.is_in_list(self._user.id, item.product_id):
+            Badge(slot, IN_LIST_TEXT, "green", icon="check").pack(
+                side="left", padx=SHADOW_PAD
+            )
+        else:
+            Button(
+                slot,
+                ADD_TO_LIST_TEXT,
+                command=lambda: self._add_to_list(item),
+                variant="primary",
+                size="sm",
+                icon="plus",
+                width=self._list_width,
+            ).pack(side="left")
+
+    def _measure_actions(self) -> None:
+        """Считает ширину столбцов кнопок: по самому широкому содержимому."""
+        self._open_width = measure_button(self, "Открыть товар", "sm")
+        self._list_width = max(
+            measure_button(self, ADD_TO_LIST_TEXT, "sm", "plus"),
+            measure_badge(self, IN_LIST_TEXT, "check"),
+        )
+        self._actions_width = self._open_width + self._list_width + 4 * SHADOW_PAD
 
     # --- действия ---
 

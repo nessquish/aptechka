@@ -14,6 +14,9 @@ from pharmacy.ui.screens.history import (
 )
 from pharmacy.ui.screens.notifications import NotificationsScreen, _when
 from pharmacy.ui.screens.product_card import ProductCardScreen
+from pharmacy.ui.theme import SHADOW_PAD
+from pharmacy.ui.widgets.badge import Badge
+from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.scroll import ScrollArea
 from tests.test_ui_shell import ShellTestCase, find_all
 from tests.test_ui_widgets import WidgetTestCase
@@ -163,6 +166,22 @@ class NotificationsTest(ShellTestCase):
         after = len(self.services.shopping.list_items(self.app.user.id, False))
         self.assertEqual(after, before + 1)
         self.assertEqual(len(self.buttons("В список покупок")), len(add) - 1)
+
+    def test_action_columns_are_aligned_in_every_row(self):
+        # В демо-данных есть и строки с кнопкой, и строки с плашкой «В списке».
+        opens = [b for b in find_all(self.page, Button) if b.text == "Открыть товар"]
+        self.assertGreater(len(opens), 2)
+        self.assertEqual({b.winfo_rootx() for b in opens}, {opens[0].winfo_rootx()})
+        self.assertEqual({b.winfo_width() for b in opens}, {opens[0].winfo_width()})
+        buttons = [
+            b for b in find_all(self.page, Button) if b.text == "В список покупок"
+        ]
+        badges = [w for w in find_all(self.page, Badge)]
+        self.assertTrue(buttons and badges)
+        # Видимый левый край кнопки смещён внутрь на поле под тень.
+        edges = {b.winfo_rootx() + SHADOW_PAD for b in buttons}
+        edges |= {w.winfo_rootx() for w in badges}
+        self.assertEqual(len(edges), 1)
 
     def test_sidebar_counter_follows_reading(self):
         self.buttons("Прочитать все")[0].invoke()

@@ -12,6 +12,7 @@ from pharmacy.ui.screens.notifications import NotificationsScreen
 from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.screens.shell import MainShell
 from pharmacy.ui.screens.shopping import ShoppingScreen
+from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.dialog import Dialog
@@ -105,6 +106,35 @@ class DashboardScreenTest(ShellTestCase):
         disabled = [b for b in self.buttons("В списке") if not b.enabled]
         self.assertEqual(len(disabled), len(self.buttons("В списке")))
         self.assertTrue(disabled)
+
+
+class DashboardAlignmentTest(ShellTestCase):
+    def test_list_buttons_have_the_same_width_and_left_edge(self):
+        buttons = [
+            b
+            for b in find_all(self.shell._current, Button)
+            if b.text in ("В список", "В списке")
+        ]
+        self.assertGreater(len(buttons), 2)
+        self.assertEqual({b.winfo_width() for b in buttons}, {buttons[0].winfo_width()})
+        self.assertEqual({b.winfo_rootx() for b in buttons}, {buttons[0].winfo_rootx()})
+
+    def test_status_badges_start_at_the_same_x(self):
+        names = {"Просрочен", "Скоро истекает", "Низкий остаток"}
+        badges = [
+            b
+            for b in find_all(self.shell._current, Badge)
+            if self.badge_text(b) in names
+        ]
+        self.assertGreater(len(badges), 2)
+        self.assertEqual({b.winfo_rootx() for b in badges}, {badges[0].winfo_rootx()})
+
+    @staticmethod
+    def badge_text(badge) -> str:
+        for item in badge.find_all():
+            if badge.type(item) == "text":
+                return badge.itemcget(item, "text")
+        return ""
 
 
 class DashboardLinksTest(ShellTestCase):
