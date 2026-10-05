@@ -45,10 +45,17 @@ class ShellTest(ShellTestCase):
         self.assertIsInstance(self.shell._current, DashboardScreen)
 
     def test_sections_without_screen_show_stub(self):
-        for name in sections.ALL[1:]:
+        unfinished = [n for n in sections.ALL if n not in self.shell._sections]
+        for name in unfinished:
             self.shell.navigate(name)
             self.settle()
             self.assertIsInstance(self.shell._current, SectionStub, name)
+
+    def test_every_menu_item_opens_something(self):
+        for name in sections.ALL:
+            self.shell.navigate(name)
+            self.settle()
+            self.assertIsNotNone(self.shell._current)
 
     def test_navigation_replaces_the_screen(self):
         self.shell.navigate(sections.HISTORY)
