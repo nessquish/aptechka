@@ -1,4 +1,4 @@
-"""Тесты окна приложения и экранов входа и регистрации."""
+﻿"""Тесты окна приложения и экранов входа и регистрации."""
 
 import tkinter as tk
 import unittest
@@ -7,7 +7,7 @@ from pharmacy.services.container import build_services
 from pharmacy.ui import fonts, theme
 from pharmacy.ui.app import App
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
-from pharmacy.ui.screens.main_stub import MainStub
+from pharmacy.ui.screens.shell import MainShell
 from tests.helpers import DatabaseTestCase
 
 
@@ -60,7 +60,7 @@ class LoginScreenTest(AppTestCase):
     def test_successful_login(self):
         self.fill("anna", "password1")
         self.assertEqual(self.app.user.login, "anna")
-        self.assertIsInstance(self.screen, MainStub)
+        self.assertIsInstance(self.screen, MainShell)
 
     def test_wrong_password_shows_banner_and_marks_password(self):
         self.fill("anna", "wrong-password")
@@ -80,7 +80,7 @@ class LoginScreenTest(AppTestCase):
     def test_new_attempt_clears_previous_error(self):
         self.fill("anna", "wrong-password")
         self.fill("anna", "password1")
-        self.assertIsInstance(self.screen, MainStub)
+        self.assertIsInstance(self.screen, MainShell)
 
     def test_link_opens_registration(self):
         self.app.show_register()
@@ -110,7 +110,7 @@ class RegisterScreenTest(AppTestCase):
     def test_successful_registration_signs_in(self):
         self.fill()
         self.assertEqual(self.app.user.login, "boris")
-        self.assertIsInstance(self.screen, MainStub)
+        self.assertIsInstance(self.screen, MainShell)
 
     def test_username_is_optional(self):
         self.fill(username="")

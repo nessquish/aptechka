@@ -8,7 +8,7 @@ from pharmacy.models import User
 from pharmacy.services.container import Services, build_services
 from pharmacy.ui import fonts, system, theme
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
-from pharmacy.ui.screens.main_stub import MainStub
+from pharmacy.ui.screens.shell import MainShell
 
 WINDOW_TITLE = "Моя аптечка"
 ScreenFactory = Callable[[tk.Misc, "App"], tk.Frame]
@@ -61,7 +61,8 @@ class App(tk.Tk):
         """Запоминает вошедшего пользователя, применяет его тему и открывает аптечку."""
         self.user = user
         theme.set_theme(user.theme)
-        self.show(MainStub)
+        self.services.notifications.refresh(user.id)
+        self.show(MainShell)
 
     def sign_out(self) -> None:
         """Выходит из аккаунта и возвращается на экран входа."""
