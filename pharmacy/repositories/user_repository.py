@@ -83,6 +83,45 @@ class UserRepository(BaseRepository):
         )
         return row is not None
 
+    def email_used_by_other(self, email: str, user_id: int) -> bool:
+        """Проверяет, занята ли почта другим пользователем (не user_id)."""
+        row = self.db.fetch_one(
+            "SELECT 1 AS found FROM users"
+            " WHERE email = ? COLLATE NOCASE AND id != ?",
+            (email, user_id),
+        )
+        return row is not None
+
+    def update_profile(self, user_id: int, username: str, email: str) -> None:
+        """Меняет имя и почту пользователя."""
+        with self._connection() as c:
+            c.execute(
+                "UPDATE users SET username = ?, email = ? WHERE id = ?",
+                (username, email, user_id),
+            )
+
+    def update_settings(
+        self,
+        user_id: int,
+        warning_days: int,
+        theme: str,
+        notify_expired: bool,
+        notify_low_stock: bool,
+    ) -> None:
+        """Сохраняет настройки пользователя."""
+        with self._connection() as c:
+            c.execute(
+                "UPDATE users SET warning_days = ?, theme = ?,"
+                " notify_expired = ?, notify_low_stock = ? WHERE id = ?",
+                (
+                    warning_days,
+                    theme,
+                    int(notify_expired),
+                    int(notify_low_stock),
+                    user_id,
+                ),
+            )
+
     def update_password_hash(
         self,
         user_id: int,
