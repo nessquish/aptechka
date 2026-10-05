@@ -1,13 +1,16 @@
 """Оболочка главного окна: боковое меню и область с выбранным разделом."""
 
 import tkinter as tk
-from typing import TYPE_CHECKING, Callable, Dict
+from typing import TYPE_CHECKING, Callable, Dict, Optional
 
 from pharmacy.models import User
 from pharmacy.services.container import Services
 from pharmacy.ui import sections, theme
 from pharmacy.ui.fonts import font_spec
 from pharmacy.ui.screens.dashboard import DashboardScreen
+from pharmacy.ui.screens.my_kit import MyKitScreen
+from pharmacy.ui.screens.product_card import ProductCardScreen
+from pharmacy.ui.screens.product_form import ProductFormScreen
 from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.dialog import Dialog
@@ -16,6 +19,8 @@ from pharmacy.ui.widgets.sidebar import Sidebar
 
 if TYPE_CHECKING:
     from pharmacy.ui.app import App
+
+ScreenFactory = Callable[[tk.Misc, "MainShell"], tk.Frame]
 
 # Содержимое окна отступает от краёв на отступ макета минус поле под тень карточек.
 CONTENT_PADDING_X = theme.CONTENT_PADDING_X - CARD_SHADOW_PAD
@@ -54,8 +59,9 @@ class MainShell(tk.Frame):
         self.app = app
         self.user: User = app.user
         self.services: Services = app.services
-        self._sections: Dict[str, Callable[[tk.Misc, "MainShell"], tk.Frame]] = {
+        self._sections: Dict[str, ScreenFactory] = {
             sections.HOME: DashboardScreen,
+            sections.MY_KIT: MyKitScreen,
         }
         self._current: tk.Frame = None
         self._sidebar = Sidebar(
@@ -74,16 +80,42 @@ class MainShell(tk.Frame):
 
     def navigate(self, name: str) -> None:
         """Открывает раздел и выделяет его в меню."""
-        if self._current is not None:
-            self._current.destroy()
         factory = self._sections.get(name)
         if factory is None:
-            self._current = SectionStub(self._content, self, name)
-        else:
-            self._current = factory(self._content, self)
+
+            def factory(parent: tk.Misc, shell: "MainShell") -> tk.Frame:
+                return SectionStub(parent, shell, name)
+
+        self.show(factory, name)
+
+    def show(self, factory: ScreenFactory, section: str) -> None:
+        """Показывает экран в области содержимого.
+
+        Args:
+            factory: Создаёт экран по (родитель, оболочка).
+            section: Раздел меню, который остаётся выделенным (карточка товара
+                относится к разделу «Моя аптечка»).
+        """
+        if self._current is not None:
+            self._current.destroy()
+        self._current = factory(self._content, self)
         self._current.pack(fill="both", expand=True)
-        self._sidebar.set_active(name)
+        self._sidebar.set_active(section)
         self.refresh_counters()
+
+    def open_product(self, product_id: int) -> None:
+        """Открывает карточку товара."""
+        self.show(
+            lambda parent, shell: ProductCardScreen(parent, shell, product_id),
+            sections.MY_KIT,
+        )
+
+    def open_product_form(self, product_id: Optional[int] = None) -> None:
+        """Открывает форму нового товара или редактирования существующего."""
+        self.show(
+            lambda parent, shell: ProductFormScreen(parent, shell, product_id),
+            sections.MY_KIT,
+        )
 
     def refresh_counters(self) -> None:
         """Обновляет счётчик непрочитанных уведомлений в меню."""
