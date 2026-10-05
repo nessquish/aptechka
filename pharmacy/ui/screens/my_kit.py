@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
 
 PAGE_SIZE = 8
-SEARCH_WIDTH = 260
+SEARCH_WIDTH = 236
 SEARCH_DELAY_MS = 250
 SORTS = (
     ("expiry", "срок годности"),
@@ -219,7 +219,7 @@ class MyKitScreen(tk.Frame):
     def _build_table(self) -> None:
         card = Card(self, flush=True)
         card.pack(fill="x")
-        self._table = DataTable(card.body, COLUMNS)
+        self._table = DataTable(card.body, COLUMNS, card)
         self._table.pack(fill="x")
         self._footer = tk.Frame(card.body, bg=palette().card)
         self._footer.pack(fill="x")

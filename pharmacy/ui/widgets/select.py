@@ -16,8 +16,7 @@ from pharmacy.ui.widgets.popup import Option, PopupList
 
 OptionLike = Union[str, Option]
 COMPACT_TEXT_INSET = 12
-COMPACT_ARROW_GAP = 18  # расстояние между текстом и стрелкой в фильтре
-COMPACT_ARROW = ICON_SIZE - 4
+COMPACT_ARROW_GAP = 8  # расстояние между текстом и стрелкой в фильтре
 
 
 def _normalize(options: Sequence[OptionLike]) -> list:
@@ -106,7 +105,7 @@ class Select(LabeledBox):
         """Ширина по выбранному значению: текст, отступы и стрелка."""
         shown = self._label_of(self._value) or self._placeholder
         text = text_width(self, self._prefix + shown, "body")
-        return text + 2 * COMPACT_TEXT_INSET + COMPACT_ARROW_GAP + COMPACT_ARROW
+        return text + COMPACT_TEXT_INSET + COMPACT_ARROW_GAP + ICON_SIZE + ICON_INSET
 
     def _fit_width(self) -> None:
         """Подгоняет ширину фильтра под выбранное значение (как в макете)."""

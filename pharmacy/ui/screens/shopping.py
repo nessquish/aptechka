@@ -94,7 +94,7 @@ class ShoppingScreen(tk.Frame):
         card.pack(fill="x", pady=(18 - CARD_SHADOW_PAD - SHADOW_PAD, 0))
         self._top = tk.Frame(card.body, bg=pal.card)
         self._top.pack(fill="x")
-        self._bar = ActionBar(self._top)
+        self._bar = ActionBar(self._top, card)
         Button(
             self._bar.buttons,
             "Отметить как купленные",
@@ -110,7 +110,7 @@ class ShoppingScreen(tk.Frame):
             variant="danger",
             size="sm",
         ).pack(side="left")
-        self._table = DataTable(card.body, COLUMNS)
+        self._table = DataTable(card.body, COLUMNS, card)
         self._table.pack(fill="x")
         self._select_all = self._table.set_header_widget(
             0,

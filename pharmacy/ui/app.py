@@ -64,23 +64,23 @@ class App(tk.Tk):
         self.services.notifications.refresh(user.id)
         self.show(MainShell)
 
-    def apply_user_changes(self, user: User, notice: str = "") -> None:
+    def apply_user_changes(
+        self, user: User, notice: str = "", start: str = sections.SETTINGS
+    ) -> None:
         """Применяет изменённые данные или тему пользователя и перестраивает окно.
 
-        Нужно после сохранения настроек: имя в боковом меню и цвета темы
-        читаются при создании виджетов, поэтому окно строится заново и
-        открывается на настройках.
+        Нужно после сохранения настроек или смены темы: имя в боковом меню и
+        цвета темы читаются при создании виджетов, поэтому окно строится заново.
 
         Args:
             user: Пользователь с новыми данными.
             notice: Сообщение для открывшегося экрана.
+            start: Раздел, который открывается после перестроения.
         """
         self.user = user
         theme.set_theme(user.theme)
         self.show(
-            lambda parent, app: MainShell(
-                parent, app, start=sections.SETTINGS, notice=notice
-            )
+            lambda parent, app: MainShell(parent, app, start=start, notice=notice)
         )
 
     def sign_out(self) -> None:

@@ -210,6 +210,7 @@ class ProductFormTest(KitTestCase):
         field.entry.insert(0, "А")
         field.entry.event_generate("<Key>", keysym="BackSpace")
         field.entry.event_generate("<KeyRelease>", keysym="BackSpace")
+        self.settle()
         self.assertTrue(form._save.enabled)
 
     def test_edit_prefills_all_fields(self):

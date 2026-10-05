@@ -9,6 +9,7 @@ from pharmacy.ui.drawing import rounded_box
 from pharmacy.ui.fonts import font_spec, line_height
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import palette
+from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.common import parent_bg, photo
 
 HEADER_PADDING_Y = 10
@@ -57,14 +58,24 @@ Cell = Union[str, TextCell, Callable[[tk.Misc], tk.Widget]]
 class DataTable(tk.Frame):
     """Шапка и строки таблицы. Столбцы делят ширину пропорционально весам."""
 
-    def __init__(self, master: tk.Misc, columns: Sequence[Column]) -> None:
+    def __init__(
+        self,
+        master: tk.Misc,
+        columns: Sequence[Column],
+        card: Optional[Card] = None,
+    ) -> None:
         """Создаёт таблицу без строк.
 
         Args:
             master: Родитель (обычно ``body`` карточки с ``flush=True``).
             columns: Столбцы слева направо.
+            card: Карточка, в которую вставлена таблица. Нужна, чтобы верхние
+                углы шапки совпадали с её скруглённым краем.
         """
         super().__init__(master, bg=parent_bg(master))
+        self._card = card
+        if card is not None:
+            card.on_redraw(self._redraw_header)
         self._columns = list(columns)
         self._sorted: Optional[int] = None
         self._rounded_top = True
@@ -219,6 +230,11 @@ class DataTable(tk.Frame):
             self._width = event.width
             self._draw_header()
 
+    def _redraw_header(self) -> None:
+        """Перерисовывает шапку после перерисовки карточки (изменился край)."""
+        if self._width and self.winfo_exists():
+            self.after_idle(self._draw_header)
+
     def _draw_header(self) -> None:
         pal = palette()
         canvas = self._header
@@ -227,10 +243,13 @@ class DataTable(tk.Frame):
         radius = theme.CARD_RADIUS - 1 if self._rounded_top else 0
         shape = rounded_box(
             self._width, self._header_height + radius, radius, pal.table_head
-        )
-        self._images.append(
-            photo(shape.crop((0, 0, self._width, self._header_height)), canvas)
-        )
+        ).crop((0, 0, self._width, self._header_height))
+        under = self._card.capture(canvas) if self._card is not None else None
+        if under is not None:
+            # Углы шапки ложатся на настоящий скруглённый край карточки.
+            under.alpha_composite(shape)
+            shape = under
+        self._images.append(photo(shape, canvas))
         canvas.create_image(0, 0, image=self._images[0], anchor="nw")
         middle = self._header_height / 2
         lefts = self._fractions()

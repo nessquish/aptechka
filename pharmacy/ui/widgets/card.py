@@ -2,12 +2,12 @@
 
 import math
 import tkinter as tk
-from typing import Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from PIL import Image
 
 from pharmacy.ui import theme
-from pharmacy.ui.drawing import Shadow, rounded_box
+from pharmacy.ui.drawing import Shadow, rgba, rounded_box
 from pharmacy.ui.theme import CARD_SHADOW_PAD, MODAL_SHADOW_PAD, palette
 from pharmacy.ui.widgets.common import parent_bg, photo
 
@@ -64,6 +64,10 @@ class Card(tk.Frame):
         self._backdrop = backdrop
         self._shadow_pad = MODAL_SHADOW_PAD if elevated else CARD_SHADOW_PAD
         self._image = None
+        self._flat: Optional[Image.Image] = (
+            None  # карточка вместе с тенью, без прозрачности
+        )
+        self._listeners: List[Callable[[], None]] = []
         self._background = tk.Canvas(
             self, bd=0, highlightthickness=0, bg=parent_bg(master)
         )
@@ -101,8 +105,38 @@ class Card(tk.Frame):
             base = self._backdrop.crop(
                 (left, top, left + event.width, top + event.height)
             )
-            base.alpha_composite(shape)
-            shape = base
+        else:
+            base = Image.new("RGBA", shape.size, rgba(self._background.cget("bg"), 1.0))
+        base.alpha_composite(shape)
+        self._flat = base
+        shape = base
         self._image = photo(shape, self)
         self._background.delete("all")
         self._background.create_image(0, 0, image=self._image, anchor="nw")
+        for listener in list(self._listeners):
+            listener()
+
+    def on_redraw(self, listener: Callable[[], None]) -> None:
+        """Вызывает функцию каждый раз, когда карточка перерисована."""
+        self._listeners.append(listener)
+
+    def capture(self, widget: tk.Misc) -> Optional[Image.Image]:
+        """Возвращает кусок нарисованной карточки (рамка, тень) под виджетом.
+
+        Содержимое с закруглёнными углами, которое лежит у самого края карточки
+        (шапка таблицы), рисуется поверх этого куска, и углы остаются гладкими.
+        Возвращает None, пока карточка не нарисована.
+        """
+        if self._flat is None:
+            return None
+        left = widget.winfo_rootx() - self._background.winfo_rootx()
+        top = widget.winfo_rooty() - self._background.winfo_rooty()
+        box = (left, top, left + widget.winfo_width(), top + widget.winfo_height())
+        if (
+            left < 0
+            or top < 0
+            or box[2] > self._flat.width
+            or box[3] > self._flat.height
+        ):
+            return None
+        return self._flat.crop(box)

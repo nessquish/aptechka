@@ -217,7 +217,14 @@ class SettingsScreen(tk.Frame):
         row, _ = self._row(inner, "Тема", first=True)
         names = [name for _key, name in THEMES]
         current = [key for key, _name in THEMES].index(self._user.theme)
-        self._theme = Segmented(row, names, current, variant="outline")
+        self._theme = Segmented(
+            row,
+            names,
+            current,
+            # Тема применяется сразу, без кнопки «Сохранить изменения».
+            lambda index: self._shell.set_theme(THEMES[index][0]),
+            variant="outline",
+        )
         self._theme.pack(side="right")
         return card
 

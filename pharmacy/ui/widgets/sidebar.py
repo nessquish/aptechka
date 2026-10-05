@@ -124,6 +124,7 @@ class Sidebar(tk.Frame):
         sections: Sequence[str],
         on_select: Callable[[str], None],
         on_logout: Callable[[], None],
+        on_toggle_theme: Callable[[], None],
     ) -> None:
         """Создаёт меню.
 
@@ -133,8 +134,10 @@ class Sidebar(tk.Frame):
             sections: Названия разделов сверху вниз.
             on_select: Вызывается с названием раздела при нажатии.
             on_logout: Вызывается при нажатии на «Выход».
+            on_toggle_theme: Вызывается при нажатии на «Тёмная/Светлая тема».
         """
         pal = palette()
+        self._footer_icons: list = []
         super().__init__(master, bg=pal.side, width=theme.SIDEBAR_WIDTH)
         self.pack_propagate(False)
         tk.Frame(self, bg=pal.line, width=1).pack(side="right", fill="y")
@@ -153,7 +156,7 @@ class Sidebar(tk.Frame):
             item = NavItem(inner, name, lambda value=name: on_select(value))
             item.pack(fill="x")
             self._items[name] = item
-        self._build_footer(inner, user, on_logout)
+        self._build_footer(inner, user, on_logout, on_toggle_theme)
 
     def set_active(self, name: str) -> None:
         """Выделяет раздел в меню."""
@@ -165,7 +168,11 @@ class Sidebar(tk.Frame):
         self._items[name].set_count(count)
 
     def _build_footer(
-        self, inner: tk.Frame, user: User, on_logout: Callable[[], None]
+        self,
+        inner: tk.Frame,
+        user: User,
+        on_logout: Callable[[], None],
+        on_toggle_theme: Callable[[], None],
     ) -> None:
         pal = palette()
         footer = tk.Frame(inner, bg=pal.side)
@@ -213,17 +220,40 @@ class Sidebar(tk.Frame):
             padx=0,
             pady=0,
         ).pack(anchor="w")
-        self._logout_icon = photo(render_icon("logout", 14, pal.red), footer)
-        logout = tk.Label(
+        dark = theme.theme_name() == theme.DARK_THEME
+        self._footer_link(
             footer,
-            text="  Выход",
-            image=self._logout_icon,
+            "Светлая тема" if dark else "Тёмная тема",
+            "sun" if dark else "moon",
+            pal.ink_2,
+            on_toggle_theme,
+        ).pack(fill="x", padx=NAV_PAD + 12, pady=(0, 4))
+        self._footer_link(footer, "Выход", "logout", pal.red, on_logout).pack(
+            fill="x", padx=NAV_PAD + 12
+        )
+
+    def _footer_link(
+        self,
+        footer: tk.Frame,
+        text: str,
+        icon: str,
+        color: str,
+        command: Callable[[], None],
+    ) -> tk.Label:
+        """Строка внизу меню: значок и подпись, нажатие вызывает команду."""
+        pal = palette()
+        glyph = photo(render_icon(icon, 14, color), footer)
+        self._footer_icons.append(glyph)
+        label = tk.Label(
+            footer,
+            text="  " + text,
+            image=glyph,
             compound="left",
             bg=pal.side,
-            fg=pal.red,
+            fg=color,
             font=font_spec("body", self),
             cursor="hand2",
             anchor="w",
         )
-        logout.pack(fill="x", padx=NAV_PAD + 12, pady=(0, 0))
-        logout.bind("<Button-1>", lambda _event: on_logout())
+        label.bind("<Button-1>", lambda _event: command())
+        return label

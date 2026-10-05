@@ -70,8 +70,14 @@ class MainShell(tk.Frame):
             sections.SETTINGS: SettingsScreen,
         }
         self._current: tk.Frame = None
+        self.section = start
         self._sidebar = Sidebar(
-            self, self.user, sections.ALL, self.navigate, self.confirm_logout
+            self,
+            self.user,
+            sections.ALL,
+            self.navigate,
+            self.confirm_logout,
+            self.toggle_theme,
         )
         self._sidebar.pack(side="left", fill="y")
         self._scroll = ScrollArea(self, gutter=CONTENT_PADDING_X)
@@ -109,6 +115,7 @@ class MainShell(tk.Frame):
         self._current = factory(self._content, self)
         self._current.pack(fill="both", expand=True, pady=(0, theme.CONTENT_PADDING_Y))
         self._scroll.scroll_to_top()
+        self.section = section
         self._sidebar.set_active(section)
         self.refresh_counters()
 
@@ -137,6 +144,28 @@ class MainShell(tk.Frame):
             lambda parent, shell: ProductFormScreen(parent, shell, product_id),
             sections.MY_KIT,
         )
+
+    def set_theme(self, name: str) -> None:
+        """Сохраняет тему в настройках пользователя и сразу применяет её.
+
+        Окно строится заново на том же разделе: цвета читаются при создании
+        виджетов.
+        """
+        if name == self.user.theme:
+            return
+        user = self.services.settings.update_settings(
+            self.user.id,
+            str(self.user.warning_days),
+            name,
+            self.user.notify_expired,
+            self.user.notify_low_stock,
+        )
+        self.app.apply_user_changes(user, start=self.section)
+
+    def toggle_theme(self) -> None:
+        """Переключает светлую и тёмную тему."""
+        dark = self.user.theme == theme.DARK_THEME
+        self.set_theme(theme.LIGHT_THEME if dark else theme.DARK_THEME)
 
     def take_notice(self) -> str:
         """Отдаёт сообщение для экрана и очищает его."""
