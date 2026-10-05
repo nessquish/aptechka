@@ -12,6 +12,7 @@ from pharmacy.repositories.category_repository import CategoryRepository
 from pharmacy.repositories.history_repository import HistoryRepository
 from pharmacy.repositories.product_repository import ProductRepository
 from pharmacy.repositories.user_repository import UserRepository
+from pharmacy.services.notification_service import NotificationService
 from pharmacy.services.status import (
     ProductStatus,
     primary_status,
@@ -162,17 +163,29 @@ def _describe_changes(old: Product, new: ProductData) -> str:
 class ProductService:
     """Добавление, изменение, удаление и просмотр товаров пользователя."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(
+        self,
+        db: Database,
+        notifications: Optional[NotificationService] = None,
+    ) -> None:
         """Создаёт сервис.
 
         Args:
             db: Менеджер базы данных.
+            notifications: Сервис уведомлений. Если передан, после добавления
+                и изменения товара его уведомления пересчитываются.
         """
         self._db = db
+        self._notifications = notifications
         self._products = ProductRepository(db)
         self._categories = CategoryRepository(db)
         self._history = HistoryRepository(db)
         self._users = UserRepository(db)
+
+    def _refresh_notifications(self, user_id: int, product_id: int) -> None:
+        """Пересчитывает уведомления товара, если подключён сервис уведомлений."""
+        if self._notifications is not None:
+            self._notifications.refresh(user_id, product_id=product_id)
 
     def list_categories(self) -> List[Category]:
         """Возвращает категории для выпадающего списка."""
@@ -201,6 +214,7 @@ class ProductService:
                 f"{data.name} · добавлен в аптечку",
                 conn,
             )
+        self._refresh_notifications(user_id, product_id)
         return self.get_product(user_id, product_id)
 
     def update_product(
@@ -233,6 +247,7 @@ class ProductService:
                     f"{data.name} · {changes}",
                     conn,
                 )
+        self._refresh_notifications(user_id, product_id)
         return self.get_product(user_id, product_id)
 
     def delete_product(self, user_id: int, product_id: int) -> None:

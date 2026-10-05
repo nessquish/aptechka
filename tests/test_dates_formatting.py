@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 
 from pharmacy.utils.dates import days_until, format_user_date, parse_user_date
-from pharmacy.utils.formatting import format_quantity
+from pharmacy.utils.formatting import format_quantity, plural
 
 
 class DatesTest(unittest.TestCase):
@@ -48,6 +48,32 @@ class FormattingTest(unittest.TestCase):
 
     def test_large_number(self):
         self.assertEqual(format_quantity(1234567.5), "1234567.5")
+
+
+class PluralTest(unittest.TestCase):
+    """Склонение слов после чисел."""
+
+    def forms(self, number):
+        return plural(number, "день", "дня", "дней")
+
+    def test_one(self):
+        for number in (1, 21, 101):
+            self.assertEqual(self.forms(number), "день", number)
+
+    def test_few(self):
+        for number in (2, 3, 4, 22, 24, 102):
+            self.assertEqual(self.forms(number), "дня", number)
+
+    def test_many(self):
+        for number in (0, 5, 9, 10, 20, 25, 30, 100):
+            self.assertEqual(self.forms(number), "дней", number)
+
+    def test_teens_are_always_many(self):
+        for number in (11, 12, 13, 14, 111, 112):
+            self.assertEqual(self.forms(number), "дней", number)
+
+    def test_negative_number_uses_absolute_value(self):
+        self.assertEqual(self.forms(-1), "день")
 
 
 if __name__ == "__main__":

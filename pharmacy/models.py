@@ -119,6 +119,40 @@ class HistoryAction:
     PRODUCT_ADDED = "product_added"
     PRODUCT_UPDATED = "product_updated"
     PRODUCT_DELETED = "product_deleted"
+    SHOPPING_ADDED = "shopping_added"
+    SHOPPING_BOUGHT = "shopping_bought"
+    SHOPPING_REMOVED = "shopping_removed"
+
+
+class NotificationKind:
+    """Виды уведомлений."""
+
+    EXPIRED = "expired"
+    EXPIRING = "expiring"
+    LOW_STOCK = "low_stock"
+
+
+@dataclass(frozen=True)
+class Notification:
+    """Уведомление о состоянии товара.
+
+    Attributes:
+        id: Идентификатор.
+        user_id: Получатель.
+        product_id: Товар, о котором уведомление.
+        kind: Вид уведомления (см. NotificationKind).
+        message: Текст для показа пользователю.
+        is_read: Прочитано ли уведомление.
+        created_at: Дата и время создания.
+    """
+
+    id: int
+    user_id: int
+    product_id: int
+    kind: str
+    message: str
+    is_read: bool
+    created_at: str
 
 
 @dataclass(frozen=True)
