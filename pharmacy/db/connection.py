@@ -16,6 +16,15 @@ from pharmacy.config import get_db_path
 from pharmacy.db.schema import DEFAULT_CATEGORIES, SCHEMA_SQL
 
 
+def _casefold(value: object) -> object:
+    """Приводит строку к нижнему регистру для сравнения (работает и с кириллицей).
+
+    Встроенные LIKE и NOCASE в SQLite не различают регистр только у латиницы,
+    поэтому поиск по русским названиям делается через эту функцию.
+    """
+    return value.casefold() if isinstance(value, str) else value
+
+
 class Database:
     """Подключение к файлу SQLite и выполнение запросов.
 
@@ -42,6 +51,7 @@ class Database:
         # В SQLite внешние ключи по умолчанию выключены, а без них не работают
         # каскадное удаление и проверки связей между таблицами.
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.create_function("casefold", 1, _casefold, deterministic=True)
         return conn
 
     @contextmanager
