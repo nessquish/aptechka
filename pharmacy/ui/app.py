@@ -6,7 +6,7 @@ from typing import Callable, Optional
 from pharmacy.db.connection import Database
 from pharmacy.models import User
 from pharmacy.services.container import Services, build_services
-from pharmacy.ui import fonts, system, theme
+from pharmacy.ui import fonts, sections, system, theme
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
 from pharmacy.ui.screens.shell import MainShell
 
@@ -63,6 +63,25 @@ class App(tk.Tk):
         theme.set_theme(user.theme)
         self.services.notifications.refresh(user.id)
         self.show(MainShell)
+
+    def apply_user_changes(self, user: User, notice: str = "") -> None:
+        """Применяет изменённые данные или тему пользователя и перестраивает окно.
+
+        Нужно после сохранения настроек: имя в боковом меню и цвета темы
+        читаются при создании виджетов, поэтому окно строится заново и
+        открывается на настройках.
+
+        Args:
+            user: Пользователь с новыми данными.
+            notice: Сообщение для открывшегося экрана.
+        """
+        self.user = user
+        theme.set_theme(user.theme)
+        self.show(
+            lambda parent, app: MainShell(
+                parent, app, start=sections.SETTINGS, notice=notice
+            )
+        )
 
     def sign_out(self) -> None:
         """Выходит из аккаунта и возвращается на экран входа."""

@@ -6,18 +6,16 @@ from typing import TYPE_CHECKING, Callable, Dict, Optional
 from pharmacy.models import User
 from pharmacy.services.container import Services
 from pharmacy.ui import sections, theme
-from pharmacy.ui.fonts import font_spec
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.history import HistoryScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
 from pharmacy.ui.screens.notifications import NotificationsScreen
 from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.screens.product_form import ProductFormScreen
+from pharmacy.ui.screens.settings import SettingsScreen
 from pharmacy.ui.screens.shopping import ShoppingScreen
 from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
-from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.dialog import Dialog
-from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.scroll import ScrollArea
 from pharmacy.ui.widgets.sidebar import Sidebar
 
@@ -30,24 +28,6 @@ ScreenFactory = Callable[[tk.Misc, "MainShell"], tk.Frame]
 CONTENT_PADDING_X = theme.CONTENT_PADDING_X - CARD_SHADOW_PAD
 
 
-class SectionStub(tk.Frame):
-    """Раздел, экран которого ещё не нарисован."""
-
-    def __init__(self, master: tk.Misc, shell: "MainShell", title: str) -> None:
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
-        PageHeader(self, title).pack(fill="x")
-        card = Card(self)
-        card.pack(fill="x", pady=(18, 0))
-        tk.Label(
-            card.body,
-            text="Этот раздел в разработке",
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("body", self),
-        ).pack(pady=60)
-
-
 class MainShell(tk.Frame):
     """Главное окно после входа.
 
@@ -55,20 +35,38 @@ class MainShell(tk.Frame):
         app: Окно приложения.
         user: Вошедший пользователь.
         services: Сервисы приложения.
+        notice: Сообщение для первого открытого экрана (например, «сохранено»).
+            Экран забирает его и очищает.
     """
 
-    def __init__(self, master: tk.Misc, app: "App") -> None:
+    def __init__(
+        self,
+        master: tk.Misc,
+        app: "App",
+        start: str = sections.HOME,
+        notice: str = "",
+    ) -> None:
+        """Создаёт оболочку и открывает стартовый раздел.
+
+        Args:
+            master: Родительский виджет.
+            app: Окно приложения.
+            start: Раздел, который открывается первым.
+            notice: Сообщение для стартового экрана.
+        """
         pal = palette()
         super().__init__(master, bg=pal.bg)
         self.app = app
         self.user: User = app.user
         self.services: Services = app.services
+        self.notice = notice
         self._sections: Dict[str, ScreenFactory] = {
             sections.HOME: DashboardScreen,
             sections.MY_KIT: MyKitScreen,
             sections.SHOPPING: ShoppingScreen,
             sections.NOTIFICATIONS: NotificationsScreen,
             sections.HISTORY: HistoryScreen,
+            sections.SETTINGS: SettingsScreen,
         }
         self._current: tk.Frame = None
         self._sidebar = Sidebar(
@@ -84,16 +82,17 @@ class MainShell(tk.Frame):
             pady=(theme.CONTENT_PADDING_Y, 0),
         )
         self._content = self._scroll.body
-        self.navigate(sections.HOME)
+        self.navigate(start)
 
     def navigate(self, name: str) -> None:
-        """Открывает раздел и выделяет его в меню."""
+        """Открывает раздел и выделяет его в меню.
+
+        Raises:
+            ValueError: Если такого раздела нет.
+        """
         factory = self._sections.get(name)
         if factory is None:
-
-            def factory(parent: tk.Misc, shell: "MainShell") -> tk.Frame:
-                return SectionStub(parent, shell, name)
-
+            raise ValueError(f"Неизвестный раздел: {name}")
         self.show(factory, name)
 
     def show(self, factory: ScreenFactory, section: str) -> None:
@@ -125,6 +124,11 @@ class MainShell(tk.Frame):
             lambda parent, shell: ProductFormScreen(parent, shell, product_id),
             sections.MY_KIT,
         )
+
+    def take_notice(self) -> str:
+        """Отдаёт сообщение для экрана и очищает его."""
+        notice, self.notice = self.notice, ""
+        return notice
 
     def refresh_counters(self) -> None:
         """Обновляет счётчик непрочитанных уведомлений в меню."""
