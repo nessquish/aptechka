@@ -43,6 +43,7 @@ class Card(tk.Frame):
         radius: int = theme.CARD_RADIUS,
         elevated: bool = False,
         backdrop: Optional[Image.Image] = None,
+        flush: bool = False,
     ) -> None:
         """Создаёт карточку.
 
@@ -54,6 +55,8 @@ class Card(tk.Frame):
             backdrop: Изображение всего родителя, на которое ложится тень.
                 Нужно, когда карточка стоит над затемнением, а не над
                 однотонным фоном.
+            flush: Содержимое доходит до боковых и верхнего края (таблицы).
+                Скруглённые верхние углы тогда рисует само содержимое.
         """
         super().__init__(master, bg=parent_bg(master))
         self._radius = radius
@@ -68,9 +71,11 @@ class Card(tk.Frame):
         self.body = tk.Frame(self, bg=palette().card)
         # Содержимое прямоугольное, поэтому отступаем от углов настолько,
         # чтобы оно не закрывало скруглённые края карточки.
-        self.inner_inset = BORDER + math.ceil(radius * CORNER_CLEARANCE)
-        inset = self._shadow_pad + self.inner_inset
-        self.body.pack(fill="both", expand=True, padx=inset, pady=inset)
+        clearance = BORDER + math.ceil(radius * CORNER_CLEARANCE)
+        self.inner_inset = BORDER if flush else clearance
+        side = self._shadow_pad + self.inner_inset
+        bottom = self._shadow_pad + clearance
+        self.body.pack(fill="both", expand=True, padx=side, pady=(side, bottom))
         if height is not None:
             self.configure(height=height)
             self.pack_propagate(False)
