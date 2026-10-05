@@ -174,3 +174,31 @@ class TransactionTest(DatabaseTestCase):
         found = self.db.fetch_one("SELECT id FROM users WHERE login = ?", (hostile,))
         self.assertIsNone(found)
         self.assertEqual(self.count_rows("users"), 1)
+
+
+class CasefoldTest(DatabaseTestCase):
+    """Поиск без учёта регистра для русских букв."""
+
+    def fold(self, text):
+        return self.db.fetch_one("SELECT casefold(?) AS value", (text,))["value"]
+
+    def test_cyrillic_lowercased(self):
+        self.assertEqual(self.fold("ИБУПРОФЕН"), "ибупрофен")
+
+    def test_latin_lowercased(self):
+        self.assertEqual(self.fold("Aspirin"), "aspirin")
+
+    def test_null_stays_null(self):
+        self.assertIsNone(self.fold(None))
+
+    def test_builtin_like_cannot_do_it_but_casefold_can(self):
+        user_id = self.add_user()
+        self.add_product(user_id, name="Ибупрофен")
+        plain_like = self.db.fetch_all(
+            "SELECT id FROM products WHERE name LIKE ?", ("%ИБУ%",)
+        )
+        with_casefold = self.db.fetch_all(
+            "SELECT id FROM products WHERE casefold(name) LIKE ?", ("%ибу%",)
+        )
+        self.assertEqual(len(plain_like), 0)
+        self.assertEqual(len(with_casefold), 1)
