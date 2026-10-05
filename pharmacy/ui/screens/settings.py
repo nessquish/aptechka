@@ -164,13 +164,17 @@ class SettingsScreen(tk.Frame):
 
     def _build_password(self, master: tk.Misc) -> Card:
         card, inner = self._section(master, "Смена пароля", "Не менее 8 символов")
-        self._field(
+        # Текущий пароль только показывается (значок «глаз»), изменить его здесь
+        # нельзя. Он известен лишь из входа в этом сеансе: в базе только хэш.
+        current = self._field(
             inner,
             "old_password",
             "Текущий пароль",
             placeholder="••••••••",
             password=True,
+            readonly=True,
         )
+        current.set(self._shell.app.session_password)
         self._field(
             inner,
             "new_password",
@@ -267,12 +271,20 @@ class SettingsScreen(tk.Frame):
         self._shell.app.apply_user_changes(settings.get_user(user_id), SAVED)
 
     def _change_password_if_filled(self) -> None:
-        old = self._fields["old_password"].get()
+        """Меняет пароль, если заполнено «Новый пароль» или его повтор.
+
+        Текущий пароль для проверки берётся из сеанса, пользователь его не
+        вводит: поле «Текущий пароль» только показывает его.
+        """
         new = self._fields["new_password"].get()
         repeat = self._fields["new_password_repeat"].get()
-        if not (old or new or repeat):
+        if not (new or repeat):
             return
-        self._services.auth.change_password(self._user.id, old, new, repeat)
+        app = self._shell.app
+        self._services.auth.change_password(
+            self._user.id, app.session_password, new, repeat
+        )
+        app.session_password = new
 
     def _show_error(self, error: ValidationError) -> None:
         if error.field == "warning_days":

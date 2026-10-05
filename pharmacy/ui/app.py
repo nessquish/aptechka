@@ -31,6 +31,7 @@ class App(tk.Tk):
         super().__init__()
         self.services = services
         self.user: Optional[User] = None
+        self.session_password = ""
         self._screen: Optional[tk.Frame] = None
         self.title(WINDOW_TITLE)
         self.minsize(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
@@ -57,9 +58,16 @@ class App(tk.Tk):
         """Показывает экран регистрации."""
         self.show(RegisterScreen)
 
-    def sign_in(self, user: User) -> None:
-        """Запоминает вошедшего пользователя, применяет его тему и открывает аптечку."""
+    def sign_in(self, user: User, password: str = "") -> None:
+        """Запоминает вошедшего пользователя, применяет его тему и открывает аптечку.
+
+        Args:
+            user: Вошедший пользователь.
+            password: Пароль, который он ввёл. Хранится только в памяти до
+                выхода (для показа в настройках), на диск не записывается.
+        """
         self.user = user
+        self.session_password = password
         theme.set_theme(user.theme)
         self.services.notifications.refresh(user.id)
         self.show(MainShell)
@@ -86,6 +94,7 @@ class App(tk.Tk):
     def sign_out(self) -> None:
         """Выходит из аккаунта и возвращается на экран входа."""
         self.user = None
+        self.session_password = ""
         theme.set_theme(theme.LIGHT_THEME)
         self.show_login()
 

@@ -247,17 +247,16 @@ class LoginScreen(_AuthScreen):
 
     def _submit(self) -> None:
         self._reset_errors()
+        password = self._fields["password"].get()
         try:
-            user = self._app.services.auth.login(
-                self._fields["login"].get(), self._fields["password"].get()
-            )
+            user = self._app.services.auth.login(self._fields["login"].get(), password)
         except ValidationError as error:
             self._show_validation_error(error)
         except AuthenticationError as error:
             self._show_banner(str(error))
             self._fields["password"].set_error()
         else:
-            self._app.sign_in(user)
+            self._app.sign_in(user, password)
 
 
 class RegisterScreen(_AuthScreen):
@@ -339,4 +338,4 @@ class RegisterScreen(_AuthScreen):
         except ValidationError as error:
             self._show_validation_error(error)
         else:
-            self._app.sign_in(user)
+            self._app.sign_in(user, values["password"])
