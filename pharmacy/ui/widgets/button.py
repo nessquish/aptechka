@@ -6,7 +6,7 @@ from typing import Callable, Optional, Tuple
 
 from pharmacy.ui import theme
 from pharmacy.ui.drawing import Shadow, rounded_box
-from pharmacy.ui.fonts import font_spec, text_width
+from pharmacy.ui.fonts import font_spec, line_height, text_width
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import SHADOW_PAD, mix, palette
 from pharmacy.ui.widgets.common import parent_bg, photo
@@ -15,6 +15,7 @@ ICON_GAP = 6
 DISABLED_SHARE = 0.55  # насколько цвета неактивной кнопки уходят в фон
 HOVER_SHARE = 0.07
 PRESSED_SHARE = 0.14
+VERTICAL_PADDING = 6  # минимальный отступ текста кнопки сверху и снизу
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,17 @@ def _shadows(variant: str) -> Tuple[Shadow, ...]:
     if variant == "danger_solid":
         return (Shadow(3, 8, pal.red, 0.28), Shadow(1, 2, pal.red, 0.12))
     return (Shadow(1, 3, pal.shadow, 0.08), Shadow(2, 6, pal.shadow, 0.05))
+
+
+def button_height(widget: tk.Misc, size: str = "md") -> int:
+    """Возвращает высоту кнопки: по макету, но не меньше, чем нужно крупному тексту."""
+    spec = SIZES[size]
+    return max(spec.height, line_height(widget, spec.font) + 2 * VERTICAL_PADDING)
+
+
+def _icon_px(spec: _Size) -> int:
+    """Размер иконки в кнопке растёт вместе с текстом."""
+    return theme.scaled(spec.icon)
 
 
 def measure_button(
@@ -108,6 +120,8 @@ class Button(tk.Canvas):
         self._variant = variant
         self._size_name = size
         self._size = SIZES[size]
+        self._height = button_height(self, size)
+        self._icon_size = _icon_px(self._size)
         self._icon = icon
         self._enabled = True
         self._hover = False
@@ -116,7 +130,7 @@ class Button(tk.Canvas):
         self._body_width = width or self._natural_width()
         self.configure(
             width=self._body_width + 2 * SHADOW_PAD,
-            height=self._size.height + 2 * SHADOW_PAD,
+            height=self._height + 2 * SHADOW_PAD,
         )
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
@@ -180,7 +194,7 @@ class Button(tk.Canvas):
         shadows = _shadows(self._variant) if self._enabled else ()
         box = rounded_box(
             self._body_width,
-            self._size.height,
+            self._height,
             theme.CONTROL_RADIUS,
             fill,
             border,
@@ -190,16 +204,16 @@ class Button(tk.Canvas):
         self._images.append(photo(box, self))
         self.create_image(0, 0, image=self._images[-1], anchor="nw")
 
-        center_y = SHADOW_PAD + self._size.height / 2
+        center_y = SHADOW_PAD + self._height / 2
         content = text_width(self, self._text, self._size.font)
         left = SHADOW_PAD + (self._body_width - content) / 2
         if self._icon:
-            content += self._size.icon + ICON_GAP
+            content += self._icon_size + ICON_GAP
             left = SHADOW_PAD + (self._body_width - content) / 2
-            glyph = render_icon(self._icon, self._size.icon, ink)
+            glyph = render_icon(self._icon, self._icon_size, ink)
             self._images.append(photo(glyph, self))
             self.create_image(left, center_y, image=self._images[-1], anchor="w")
-            left += self._size.icon + ICON_GAP
+            left += self._icon_size + ICON_GAP
         self.create_text(
             left,
             center_y,

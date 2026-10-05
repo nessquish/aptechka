@@ -7,7 +7,7 @@ from pharmacy.ui import fonts, theme
 from pharmacy.ui.theme import SHADOW_PAD
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.banner import ErrorBanner
-from pharmacy.ui.widgets.button import Button
+from pharmacy.ui.widgets.button import Button, button_height
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.field import TextField
 
@@ -71,9 +71,24 @@ class ButtonTest(WidgetTestCase):
         self.assertEqual(calls, [1])
 
     def test_height_follows_size(self):
-        for size, height in (("sm", 26), ("md", 32), ("lg", 36)):
+        for size, design in (("sm", 26), ("md", 32), ("lg", 36)):
             button = Button(self.root, "Текст", size=size)
-            self.assertEqual(int(button.cget("height")), height + 2 * SHADOW_PAD)
+            height = int(button.cget("height")) - 2 * SHADOW_PAD
+            # Не ниже, чем в макете, и не ниже, чем нужно тексту выбранного размера.
+            self.assertGreaterEqual(height, design)
+            self.assertEqual(height, button_height(self.root, size))
+
+    def test_buttons_stay_tall_enough_for_large_text(self):
+        from pharmacy.ui import theme
+
+        self.addCleanup(theme.set_text_size, "normal")
+        theme.set_text_size("large")
+        for size in ("sm", "md", "lg"):
+            button = Button(self.root, "Текст", size=size)
+            self.assertGreater(
+                int(button.cget("height")) - 2 * SHADOW_PAD,
+                {"sm": 26, "md": 32, "lg": 36}[size] - 1,
+            )
 
     def test_icon_makes_button_wider(self):
         plain = Button(self.root, "Добавить")

@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING, List, Optional
 from pharmacy.errors import NotFoundError, ValidationError
 from pharmacy.models import Notification, NotificationKind
 from pharmacy.services.notification_service import KIND_LABELS
-from pharmacy.ui import labels, periods, theme
+from pharmacy.ui import labels, periods
 from pharmacy.ui.drawing import rounded_box
 from pharmacy.ui.fonts import font_spec, line_height
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.badge import Badge, measure_badge
-from pharmacy.ui.widgets.button import Button, measure_button
+from pharmacy.ui.widgets.button import Button, button_height, measure_button
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.common import photo
 from pharmacy.ui.widgets.controls import Segmented
@@ -236,7 +236,7 @@ class NotificationsScreen(tk.Frame):
     ) -> None:
         # Два столбца фиксированной ширины: «Открыть товар» и «В список покупок»
         # (или плашка «В списке покупок»). У всех строк они стоят ровно друг под другом.
-        height = theme.CONTROL_HEIGHT_SMALL + 2 * SHADOW_PAD
+        height = button_height(self, "sm") + 2 * SHADOW_PAD
         box = tk.Frame(inner, bg=background, width=self._actions_width, height=height)
         box.pack_propagate(False)
         box.pack(side="right")

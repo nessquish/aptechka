@@ -132,9 +132,9 @@ _active_name = LIGHT_THEME
 
 # Размер текста: ключ -> (подпись, во сколько раз крупнее макета).
 TEXT_SIZES: Dict[str, Tuple[str, float]] = {
-    "normal": ("Обычный", 1.0),
-    "medium": ("Средний", 1.1),
-    "large": ("Большой", 1.2),
+    "normal": ("Обычный", 1.1),
+    "medium": ("Средний", 1.25),
+    "large": ("Большой", 1.4),
 }
 DEFAULT_TEXT_SIZE = "normal"
 _text_size = DEFAULT_TEXT_SIZE
@@ -165,19 +165,19 @@ def scaled(pixels: int) -> int:
     return max(round(pixels * TEXT_SIZES[_text_size][1]), 1)
 
 
-def _layout_factor(strength: float) -> float:
-    """Во сколько раз растут размеры, зависящие от ширины текста."""
-    return 1 + (TEXT_SIZES[_text_size][1] - 1) * strength
+def text_scale() -> float:
+    """Возвращает масштаб текста (1.0 соответствует размерам макета)."""
+    return TEXT_SIZES[_text_size][1]
 
 
 def window_width() -> int:
     """Минимальная ширина окна: при крупном тексте окно шире, чтобы всё помещалось."""
-    return round(WINDOW_WIDTH * _layout_factor(1.25))
+    return round(WINDOW_WIDTH * text_scale())
 
 
 def sidebar_width() -> int:
-    """Ширина боковой панели: при крупном тексте шире."""
-    return round(SIDEBAR_WIDTH * _layout_factor(1.2))
+    """Ширина боковой панели растёт вместе с текстом, чтобы пункты не были тесными."""
+    return round(SIDEBAR_WIDTH * text_scale())
 
 
 def set_theme(name: str) -> None:
@@ -263,13 +263,13 @@ TYPOGRAPHY: Dict[str, Tuple[int, int]] = {
     "body_strong": (12, 600),
     "small": (11, 400),
     "small_medium": (11, 500),
-    "caption": (10, 400),
+    "caption": (11, 400),
     "label": (11, 400),
-    "badge": (10, 500),
+    "badge": (11, 500),
     "number": (22, 700),
     "sidebar_title": (17, 800),
     "user_name": (12, 700),
-    "counter": (10, 700),
+    "counter": (11, 700),
     "modal_title": (16, 700),
     "strong": (12, 700),
 }

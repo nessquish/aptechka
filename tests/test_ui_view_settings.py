@@ -77,18 +77,29 @@ class TextScaleTest(unittest.TestCase):
     def tearDown(self):
         theme.set_text_size("normal")
 
-    def test_normal_keeps_the_design_sizes(self):
-        theme.set_text_size("normal")
-        for size in (10, 11, 12, 13, 18, 21):
-            self.assertEqual(theme.scaled(size), size)
+    def test_sizes_for_the_main_text(self):
+        results = {}
+        for name in ("normal", "medium", "large"):
+            theme.set_text_size(name)
+            results[name] = theme.scaled(12)
+        self.assertEqual(results, {"normal": 13, "medium": 15, "large": 17})
 
-    def test_larger_sizes_grow_modestly(self):
+    def test_each_step_is_clearly_visible(self):
+        """Соседние размеры отличаются не меньше чем на 2 пикселя у основного текста."""
+        theme.set_text_size("normal")
+        normal = theme.scaled(12)
         theme.set_text_size("medium")
         medium = theme.scaled(12)
         theme.set_text_size("large")
         large = theme.scaled(12)
-        self.assertEqual((medium, large), (13, 14))
-        self.assertLessEqual(large, 12 * 1.25)
+        self.assertGreaterEqual(medium - normal, 2)
+        self.assertGreaterEqual(large - medium, 2)
+
+    def test_smallest_text_is_not_tiny(self):
+        for name in theme.TEXT_SIZES:
+            theme.set_text_size(name)
+            smallest = min(theme.scaled(size) for size, _w in theme.TYPOGRAPHY.values())
+            self.assertGreaterEqual(smallest, 12, name)
 
     def test_every_style_gets_bigger_with_each_step(self):
         for style, (size, _weight) in theme.TYPOGRAPHY.items():
@@ -99,7 +110,7 @@ class TextScaleTest(unittest.TestCase):
             theme.set_text_size("large")
             large = theme.scaled(size)
             self.assertLess(normal, medium, style)
-            self.assertLessEqual(medium, large, style)
+            self.assertLess(medium, large, style)
 
     def test_unknown_size_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -116,12 +127,19 @@ class TextScaleTest(unittest.TestCase):
         )  # размер отрицательный: пиксели
 
     def test_window_and_sidebar_grow_with_text(self):
-        theme.set_text_size("normal")
-        base = (theme.window_width(), theme.sidebar_width())
-        self.assertEqual(base, (theme.WINDOW_WIDTH, theme.SIDEBAR_WIDTH))
-        theme.set_text_size("large")
-        self.assertGreater(theme.window_width(), base[0])
-        self.assertGreater(theme.sidebar_width(), base[1])
+        widths = []
+        for name in ("normal", "medium", "large"):
+            theme.set_text_size(name)
+            widths.append((theme.window_width(), theme.sidebar_width()))
+        for smaller, bigger in zip(widths, widths[1:]):
+            self.assertGreater(bigger[0], smaller[0])
+            self.assertGreater(bigger[1], smaller[1])
+        # Даже при обычном тексте панель шире, чем в макете: текст стал крупнее.
+        self.assertGreater(widths[0][1], theme.SIDEBAR_WIDTH)
+
+    def test_scale_is_exposed(self):
+        theme.set_text_size("medium")
+        self.assertEqual(theme.text_scale(), 1.25)
 
 
 class TextSizeInAppTest(ShellTestCase):

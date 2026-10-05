@@ -82,7 +82,7 @@ class DataTable(tk.Frame):
         self._header_widgets: Dict[int, tk.Widget] = {}
         self._images: list = []
         self._width = 0
-        self._header_height = line_height(self, "small_medium") + 2 * HEADER_PADDING_Y
+        self._header_height = line_height(self, "body_medium") + 2 * HEADER_PADDING_Y
         self._header = tk.Canvas(
             self,
             bd=0,
@@ -200,7 +200,7 @@ class DataTable(tk.Frame):
             "ink_3": pal.ink_3,
             "primary": pal.primary,
         }
-        font = font_spec("strong" if spec.bold else "small", self)
+        font = font_spec("strong" if spec.bold else "body", self)
         if spec.strike:
             font = (font[0], font[1], f"{font[2]} overstrike")
         label = tk.Label(
@@ -274,7 +274,7 @@ class DataTable(tk.Frame):
                 text=column.title,
                 anchor="w",
                 fill=pal.ink_2,
-                font=font_spec("small_medium", self),
+                font=font_spec("body_medium", self),
             )
             if index == self._sorted:
                 right = canvas.bbox(item)[2] + 4
