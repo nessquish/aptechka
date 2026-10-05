@@ -10,6 +10,7 @@ from pharmacy.ui.fonts import font_spec, line_height, text_width
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import mix, palette
 from pharmacy.ui.widgets.common import parent_bg, photo
+from pharmacy.ui.widgets.iconbutton import IconButton
 
 NAV_RADIUS = 10
 NAV_PAD = 3  # поле под тень выбранного пункта
@@ -125,6 +126,7 @@ class Sidebar(tk.Frame):
         on_select: Callable[[str], None],
         on_logout: Callable[[], None],
         on_toggle_theme: Callable[[], None],
+        on_collapse: Callable[[], None],
     ) -> None:
         """Создаёт меню.
 
@@ -135,22 +137,26 @@ class Sidebar(tk.Frame):
             on_select: Вызывается с названием раздела при нажатии.
             on_logout: Вызывается при нажатии на «Выход».
             on_toggle_theme: Вызывается при нажатии на «Тёмная/Светлая тема».
+            on_collapse: Вызывается при нажатии на кнопку сворачивания панели.
         """
         pal = palette()
         self._footer_icons: list = []
-        super().__init__(master, bg=pal.side, width=theme.SIDEBAR_WIDTH)
+        super().__init__(master, bg=pal.side, width=theme.sidebar_width())
         self.pack_propagate(False)
         tk.Frame(self, bg=pal.line, width=1).pack(side="right", fill="y")
         inner = tk.Frame(self, bg=pal.side)
         inner.pack(fill="both", expand=True, padx=(14 - NAV_PAD, 14 - NAV_PAD))
+        header = tk.Frame(inner, bg=pal.side)
+        header.pack(fill="x", padx=(NAV_PAD + 4, NAV_PAD), pady=(18, 22))
         tk.Label(
-            inner,
+            header,
             text="Моя аптечка",
             bg=pal.side,
             fg=pal.brand_ink,
             font=font_spec("sidebar_title", self),
             padx=0,
-        ).pack(anchor="w", padx=NAV_PAD + 4, pady=(22, 26))
+        ).pack(side="left")
+        IconButton(header, "panel-left", on_collapse).pack(side="right")
         self._items: Dict[str, NavItem] = {}
         for name in sections:
             item = NavItem(inner, name, lambda value=name: on_select(value))

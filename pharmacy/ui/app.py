@@ -8,9 +8,11 @@ from pharmacy.models import User
 from pharmacy.services.container import Services, build_services
 from pharmacy.ui import fonts, sections, system, theme
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
-from pharmacy.ui.screens.shell import MainShell
+from pharmacy.ui.preferences import Preferences
+from pharmacy.ui.screens.shell import TEXT_SIZE, MainShell
 
 WINDOW_TITLE = "Моя аптечка"
+PREFERENCES_FILE = "preferences.json"  # лежит рядом с файлом базы
 ScreenFactory = Callable[[tk.Misc, "App"], tk.Frame]
 
 
@@ -22,14 +24,19 @@ class App(tk.Tk):
         user: Вошедший пользователь или None на экранах входа.
     """
 
-    def __init__(self, services: Services) -> None:
+    def __init__(
+        self, services: Services, preferences: Optional[Preferences] = None
+    ) -> None:
         """Создаёт окно по размеру макета и показывает экран входа.
 
         Args:
             services: Сервисы приложения.
+            preferences: Предпочтения отображения (размер текста, боковая
+                панель). По умолчанию хранятся только в памяти.
         """
         super().__init__()
         self.services = services
+        self.preferences = preferences or Preferences()
         self.user: Optional[User] = None
         self.session_password = ""
         self._screen: Optional[tk.Frame] = None
@@ -68,7 +75,7 @@ class App(tk.Tk):
         """
         self.user = user
         self.session_password = password
-        theme.set_theme(user.theme)
+        self._apply_view_settings(user)
         self.services.notifications.refresh(user.id)
         self.show(MainShell)
 
@@ -86,16 +93,37 @@ class App(tk.Tk):
             start: Раздел, который открывается после перестроения.
         """
         self.user = user
-        theme.set_theme(user.theme)
+        self._apply_view_settings(user)
         self.show(
             lambda parent, app: MainShell(parent, app, start=start, notice=notice)
         )
+
+    def _apply_view_settings(self, user: User) -> None:
+        """Включает тему и размер текста пользователя до построения экранов."""
+        theme.set_theme(user.theme)
+        size = self.preferences.get(user.id, TEXT_SIZE, theme.DEFAULT_TEXT_SIZE)
+        theme.set_text_size(
+            size if size in theme.TEXT_SIZES else theme.DEFAULT_TEXT_SIZE
+        )
+        self._fit_window()
+
+    def _fit_window(self) -> None:
+        """Подгоняет минимальную ширину окна под размер текста.
+
+        Если окно уже, чем нужно, оно расширяется (но не шире экрана).
+        """
+        width = min(theme.window_width(), self.winfo_screenwidth() - 40)
+        self.minsize(width, theme.WINDOW_HEIGHT)
+        if self.winfo_width() < width:
+            self.geometry(f"{width}x{max(self.winfo_height(), theme.WINDOW_HEIGHT)}")
 
     def sign_out(self) -> None:
         """Выходит из аккаунта и возвращается на экран входа."""
         self.user = None
         self.session_password = ""
         theme.set_theme(theme.LIGHT_THEME)
+        theme.set_text_size(theme.DEFAULT_TEXT_SIZE)
+        self.minsize(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
         self.show_login()
 
     def _center(self, width: int, height: int) -> None:
@@ -115,4 +143,5 @@ def run(db: Optional[Database] = None) -> None:
     fonts.register_fonts()
     db = db or Database()
     db.init_schema()
-    App(build_services(db)).mainloop()
+    preferences = Preferences(db.path.parent / PREFERENCES_FILE)
+    App(build_services(db), preferences).mainloop()

@@ -230,6 +230,18 @@ class SettingsScreen(tk.Frame):
             variant="outline",
         )
         self._theme.pack(side="right")
+
+        row, _ = self._row(inner, "Размер текста")
+        sizes = list(theme.TEXT_SIZES)
+        self._text_size = Segmented(
+            row,
+            [theme.TEXT_SIZES[key][0] for key in sizes],
+            sizes.index(theme.text_size_name()),
+            # Как и тема, размер текста применяется сразу.
+            lambda index: self._shell.set_text_size(sizes[index]),
+            variant="outline",
+        )
+        self._text_size.pack(side="right")
         return card
 
     # --- сохранение ---

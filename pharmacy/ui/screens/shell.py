@@ -17,6 +17,7 @@ from pharmacy.ui.screens.settings import SettingsScreen
 from pharmacy.ui.screens.shopping import ShoppingScreen
 from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
 from pharmacy.ui.widgets.dialog import Dialog
+from pharmacy.ui.widgets.iconbutton import IconButton
 from pharmacy.ui.widgets.scroll import ScrollArea
 from pharmacy.ui.widgets.sidebar import Sidebar
 
@@ -24,6 +25,10 @@ if TYPE_CHECKING:
     from pharmacy.ui.app import App
 
 ScreenFactory = Callable[[tk.Misc, "MainShell"], tk.Frame]
+
+RAIL_WIDTH = 44  # ширина полосы, которая остаётся от свёрнутой боковой панели
+SIDEBAR_COLLAPSED = "sidebar_collapsed"  # ключи в предпочтениях пользователя
+TEXT_SIZE = "text_size"
 
 # Содержимое окна отступает от краёв на отступ макета минус поле под тень карточек.
 CONTENT_PADDING_X = theme.CONTENT_PADDING_X - CARD_SHADOW_PAD
@@ -78,9 +83,14 @@ class MainShell(tk.Frame):
             self.navigate,
             self.confirm_logout,
             self.toggle_theme,
+            lambda: self.set_sidebar_collapsed(True),
         )
-        self._sidebar.pack(side="left", fill="y")
+        self._rail = self._build_rail()
         self._scroll = ScrollArea(self, gutter=CONTENT_PADDING_X)
+        self._collapsed = self.app.preferences.get(
+            self.user.id, SIDEBAR_COLLAPSED, False
+        )
+        (self._rail if self._collapsed else self._sidebar).pack(side="left", fill="y")
         self._scroll.pack(
             side="left",
             fill="both",
@@ -90,6 +100,46 @@ class MainShell(tk.Frame):
         )
         self._content = self._scroll.body
         self.navigate(start)
+
+    def _build_rail(self) -> tk.Frame:
+        """Узкая полоса с кнопкой «развернуть», которая остаётся от свёрнутой панели."""
+        pal = palette()
+        rail = tk.Frame(self, bg=pal.side, width=RAIL_WIDTH)
+        rail.pack_propagate(False)
+        tk.Frame(rail, bg=pal.line, width=1).pack(side="right", fill="y")
+        IconButton(rail, "panel-left", lambda: self.set_sidebar_collapsed(False)).pack(
+            pady=(18, 0)
+        )
+        return rail
+
+    @property
+    def sidebar_collapsed(self) -> bool:
+        """Свёрнута ли боковая панель."""
+        return self._collapsed
+
+    def set_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Сворачивает или разворачивает боковую панель и запоминает выбор."""
+        if collapsed == self._collapsed:
+            return
+        self._collapsed = collapsed
+        self.app.preferences.set(self.user.id, SIDEBAR_COLLAPSED, collapsed)
+        shown, hidden = (
+            (self._rail, self._sidebar)
+            if collapsed
+            else (
+                self._sidebar,
+                self._rail,
+            )
+        )
+        hidden.pack_forget()
+        shown.pack(side="left", fill="y", before=self._scroll)
+
+    def set_text_size(self, name: str) -> None:
+        """Запоминает размер текста и сразу применяет его (окно строится заново)."""
+        if name == theme.text_size_name():
+            return
+        self.app.preferences.set(self.user.id, TEXT_SIZE, name)
+        self.app.apply_user_changes(self.user, start=self.section)
 
     def navigate(self, name: str) -> None:
         """Открывает раздел и выделяет его в меню.

@@ -130,6 +130,55 @@ DARK = Palette(
 _PALETTES: Dict[str, Palette] = {LIGHT_THEME: LIGHT, DARK_THEME: DARK}
 _active_name = LIGHT_THEME
 
+# Размер текста: ключ -> (подпись, во сколько раз крупнее макета).
+TEXT_SIZES: Dict[str, Tuple[str, float]] = {
+    "normal": ("Обычный", 1.0),
+    "medium": ("Средний", 1.1),
+    "large": ("Большой", 1.2),
+}
+DEFAULT_TEXT_SIZE = "normal"
+_text_size = DEFAULT_TEXT_SIZE
+
+
+def set_text_size(name: str) -> None:
+    """Выбирает размер текста (``normal``, ``medium`` или ``large``).
+
+    Шрифты читают масштаб при создании виджетов, поэтому после смены
+    размера экран нужно построить заново.
+
+    Raises:
+        ValueError: Если такого размера нет.
+    """
+    global _text_size
+    if name not in TEXT_SIZES:
+        raise ValueError(f"Неизвестный размер текста: {name}")
+    _text_size = name
+
+
+def text_size_name() -> str:
+    """Возвращает выбранный размер текста."""
+    return _text_size
+
+
+def scaled(pixels: int) -> int:
+    """Увеличивает размер шрифта из макета по выбранному размеру текста."""
+    return max(round(pixels * TEXT_SIZES[_text_size][1]), 1)
+
+
+def _layout_factor(strength: float) -> float:
+    """Во сколько раз растут размеры, зависящие от ширины текста."""
+    return 1 + (TEXT_SIZES[_text_size][1] - 1) * strength
+
+
+def window_width() -> int:
+    """Минимальная ширина окна: при крупном тексте окно шире, чтобы всё помещалось."""
+    return round(WINDOW_WIDTH * _layout_factor(1.25))
+
+
+def sidebar_width() -> int:
+    """Ширина боковой панели: при крупном тексте шире."""
+    return round(SIDEBAR_WIDTH * _layout_factor(1.2))
+
 
 def set_theme(name: str) -> None:
     """Выбирает тему оформления (``light`` или ``dark``).

@@ -12,7 +12,7 @@ from pathlib import Path
 from tkinter import font as tkfont
 from typing import Dict, Tuple
 
-from pharmacy.ui.theme import TYPOGRAPHY
+from pharmacy.ui.theme import TYPOGRAPHY, scaled
 
 FONTS_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 _FR_PRIVATE = 0x10  # шрифт виден только этому процессу
@@ -65,6 +65,7 @@ def font_spec(style: str, root: tk.Misc = None) -> Tuple[str, int, str]:
         понимает пиксели, а не пункты, и текст совпадает с макетом.
     """
     size, weight = TYPOGRAPHY[style]
+    size = scaled(size)
     family, tk_weight = _INTER_FAMILIES[weight]
     if root is not None and family not in tkfont.families(root):
         family = _FALLBACK_FAMILY

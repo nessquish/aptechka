@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
 
 PAGE_SIZE = 8
-SEARCH_WIDTH = 236
 SEARCH_DELAY_MS = 250
 SORTS = (
     ("expiry", "срок годности"),
@@ -164,10 +163,13 @@ class MyKitScreen(tk.Frame):
             placeholder="Поиск по названию…",
             leading_icon="search",
             compact=True,
-            width=SEARCH_WIDTH,
             on_change=self._on_search,
         )
-        self._search_field.pack(side="left", padx=(0, 8 - 2 * SHADOW_PAD))
+        # Поиск занимает всё свободное место панели, поэтому при крупном тексте
+        # фильтры не вылезают за край окна.
+        self._search_field.pack(
+            side="left", fill="x", expand=True, padx=(0, 8 - 2 * SHADOW_PAD)
+        )
         categories = [(None, "Все категории")] + [
             (c.id, c.name) for c in self._services.products.list_categories()
         ]

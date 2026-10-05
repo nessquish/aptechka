@@ -76,6 +76,7 @@ ICONS: Dict[str, Tuple[Primitive, ...]] = {
     "chevron-left": (_path("m15 18-6-6 6-6"),),
     "chevron-right": (_path("m9 18 6-6-6-6"),),
     "chevron-down": (_path("m6 9 6 6 6-6"),),
+    "panel-left": (_rect(3, 3, 18, 18, 2), _path("M9 3v18")),
     "moon": (_path("M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"),),
     "sun": (
         _circle(12, 12, 4),
