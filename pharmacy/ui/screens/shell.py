@@ -8,7 +8,9 @@ from pharmacy.services.container import Services
 from pharmacy.ui import sections, theme
 from pharmacy.ui.fonts import font_spec
 from pharmacy.ui.screens.dashboard import DashboardScreen
+from pharmacy.ui.screens.history import HistoryScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
+from pharmacy.ui.screens.notifications import NotificationsScreen
 from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.screens.product_form import ProductFormScreen
 from pharmacy.ui.screens.shopping import ShoppingScreen
@@ -16,6 +18,7 @@ from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.dialog import Dialog
 from pharmacy.ui.widgets.page import PageHeader
+from pharmacy.ui.widgets.scroll import ScrollArea
 from pharmacy.ui.widgets.sidebar import Sidebar
 
 if TYPE_CHECKING:
@@ -64,20 +67,23 @@ class MainShell(tk.Frame):
             sections.HOME: DashboardScreen,
             sections.MY_KIT: MyKitScreen,
             sections.SHOPPING: ShoppingScreen,
+            sections.NOTIFICATIONS: NotificationsScreen,
+            sections.HISTORY: HistoryScreen,
         }
         self._current: tk.Frame = None
         self._sidebar = Sidebar(
             self, self.user, sections.ALL, self.navigate, self.confirm_logout
         )
         self._sidebar.pack(side="left", fill="y")
-        self._content = tk.Frame(self, bg=pal.bg)
-        self._content.pack(
+        self._scroll = ScrollArea(self, gutter=CONTENT_PADDING_X)
+        self._scroll.pack(
             side="left",
             fill="both",
             expand=True,
-            padx=CONTENT_PADDING_X,
+            padx=(CONTENT_PADDING_X, 0),
             pady=(theme.CONTENT_PADDING_Y, 0),
         )
+        self._content = self._scroll.body
         self.navigate(sections.HOME)
 
     def navigate(self, name: str) -> None:
@@ -101,7 +107,8 @@ class MainShell(tk.Frame):
         if self._current is not None:
             self._current.destroy()
         self._current = factory(self._content, self)
-        self._current.pack(fill="both", expand=True)
+        self._current.pack(fill="both", expand=True, pady=(0, theme.CONTENT_PADDING_Y))
+        self._scroll.scroll_to_top()
         self._sidebar.set_active(section)
         self.refresh_counters()
 

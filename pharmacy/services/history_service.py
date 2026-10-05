@@ -9,11 +9,11 @@ from pharmacy.repositories.history_repository import HistoryRepository
 
 # Подписи видов действий для фильтра в интерфейсе.
 ACTION_LABELS = {
-    HistoryAction.PRODUCT_ADDED: "Товар добавлен",
-    HistoryAction.PRODUCT_UPDATED: "Товар изменён",
-    HistoryAction.PRODUCT_DELETED: "Товар удалён",
+    HistoryAction.PRODUCT_ADDED: "Добавление товара",
+    HistoryAction.PRODUCT_UPDATED: "Изменение товара",
+    HistoryAction.PRODUCT_DELETED: "Удаление товара",
     HistoryAction.SHOPPING_ADDED: "Добавлено в список покупок",
-    HistoryAction.SHOPPING_BOUGHT: "Куплено",
+    HistoryAction.SHOPPING_BOUGHT: "Товар куплен",
     HistoryAction.SHOPPING_REMOVED: "Удалено из списка покупок",
 }
 

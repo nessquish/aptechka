@@ -2,6 +2,7 @@
 
 from typing import Dict, Tuple
 
+from pharmacy.models import HistoryAction, NotificationKind
 from pharmacy.services.status import ProductStatus
 
 # Состояние товара -> цвет плашки, значок и тон значка.
@@ -16,6 +17,36 @@ STATUS_ICONS: Dict[ProductStatus, str] = {
     ProductStatus.EXPIRING: "clock",
     ProductStatus.LOW_STOCK: "trending-down",
     ProductStatus.OK: "check",
+}
+
+# Вид уведомления -> значок и тон значка.
+NOTIFICATION_ICONS: Dict[str, str] = {
+    NotificationKind.EXPIRED: "alert",
+    NotificationKind.EXPIRING: "clock",
+    NotificationKind.LOW_STOCK: "trending-down",
+}
+NOTIFICATION_TONES: Dict[str, str] = {
+    NotificationKind.EXPIRED: "red",
+    NotificationKind.EXPIRING: "amber",
+    NotificationKind.LOW_STOCK: "amber",
+}
+
+# Действие в истории -> значок и тон значка.
+HISTORY_ICONS: Dict[str, str] = {
+    HistoryAction.PRODUCT_ADDED: "plus",
+    HistoryAction.PRODUCT_UPDATED: "pencil",
+    HistoryAction.PRODUCT_DELETED: "x",
+    HistoryAction.SHOPPING_ADDED: "cart",
+    HistoryAction.SHOPPING_BOUGHT: "check",
+    HistoryAction.SHOPPING_REMOVED: "x",
+}
+HISTORY_TONES: Dict[str, str] = {
+    HistoryAction.PRODUCT_ADDED: "green",
+    HistoryAction.PRODUCT_UPDATED: "primary",
+    HistoryAction.PRODUCT_DELETED: "red",
+    HistoryAction.SHOPPING_ADDED: "amber",
+    HistoryAction.SHOPPING_BOUGHT: "green",
+    HistoryAction.SHOPPING_REMOVED: "gray",
 }
 
 # Короткие названия категорий для таблиц и подписей, как в макете.
