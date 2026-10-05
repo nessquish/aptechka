@@ -1,6 +1,7 @@
 """Запросы к таблице истории действий."""
 
 import sqlite3
+from datetime import date
 from typing import List, Optional
 
 from pharmacy.models import HistoryRecord
@@ -55,6 +56,7 @@ class HistoryRepository(BaseRepository):
         user_id: int,
         action: Optional[str] = None,
         limit: Optional[int] = None,
+        since: Optional[date] = None,
     ) -> List[HistoryRecord]:
         """Возвращает историю пользователя, самые новые записи первыми.
 
@@ -62,6 +64,7 @@ class HistoryRepository(BaseRepository):
             user_id: Идентификатор пользователя.
             action: Показать только действия этого вида (необязательно).
             limit: Сколько записей вернуть не больше (необязательно).
+            since: Только записи не раньше этой даты (необязательно).
 
         Returns:
             Список записей.
@@ -71,8 +74,17 @@ class HistoryRepository(BaseRepository):
         if action is not None:
             sql += " AND action = ?"
             params.append(action)
+        if since is not None:
+            sql += " AND date(created_at) >= ?"
+            params.append(since.isoformat())
         sql += " ORDER BY created_at DESC, id DESC"
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
         return [_to_record(row) for row in self.db.fetch_all(sql, params)]
+
+    def delete_all(self, user_id: int) -> int:
+        """Очищает историю пользователя и возвращает число удалённых записей."""
+        with self._connection() as c:
+            cursor = c.execute("DELETE FROM history WHERE user_id = ?", (user_id,))
+            return cursor.rowcount
