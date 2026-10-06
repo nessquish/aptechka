@@ -20,9 +20,14 @@ from tests.test_ui_app import AppTestCase
 
 
 def find_all(widget: tk.Misc, kind: Type) -> List:
-    """Находит в дереве виджетов все виджеты нужного класса."""
+    """Находит в дереве виджетов все виджеты нужного класса.
+
+    Готовые, но спрятанные экраны разделов пропускаются: пользователь их не видит.
+    """
     found = [widget] if isinstance(widget, kind) else []
     for child in widget.winfo_children():
+        if isinstance(child, tk.Frame) and not child.winfo_manager():
+            continue
         found.extend(find_all(child, kind))
     return found
 
@@ -66,7 +71,8 @@ class ShellTest(ShellTestCase):
         self.shell.navigate(sections.HISTORY)
         self.shell.navigate(sections.HOME)
         self.settle()
-        self.assertEqual(len(self.shell._content.winfo_children()), 1)
+        shown = [c for c in self.shell._content.winfo_children() if c.winfo_manager()]
+        self.assertEqual(shown, [self.shell._current])
 
     def test_notifications_are_refreshed_on_sign_in(self):
         unread = self.services.notifications.count_unread(self.app.user.id)

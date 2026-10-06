@@ -25,9 +25,18 @@ class WidgetTestCase(unittest.TestCase):
         except tk.TclError:
             self.skipTest("нет графической среды")
         self.addCleanup(self.root.destroy)
+        self.addCleanup(self._flush, self.root)  # выполняется до destroy
         self.root.configure(bg=theme.palette().bg)
         self.root.attributes("-alpha", 0)
         self.root.geometry("500x400+0+0")
+
+    @staticmethod
+    def _flush(window):
+        """Даёт Tk выполнить отложенные вызовы до закрытия окна (без шума в консоли)."""
+        try:
+            window.update()
+        except tk.TclError:
+            pass
 
     def settle(self):
         for _ in range(3):

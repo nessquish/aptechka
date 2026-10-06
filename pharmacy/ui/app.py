@@ -11,7 +11,7 @@ from pharmacy.services.container import Services, build_services
 from pharmacy.ui import fonts, sections, system, theme
 from pharmacy.ui.appicon import render_app_icon
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
-from pharmacy.ui.freeze import frozen
+from pharmacy.ui.freeze import frozen, redraw_window
 from pharmacy.ui.preferences import Preferences
 from pharmacy.ui.screens.shell import TEXT_SIZE, MainShell
 
@@ -49,7 +49,18 @@ class App(tk.Tk):
         self.iconphoto(True, self._window_icon)
         self.minsize(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
         self._center(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
+        self.bind("<Map>", self._on_map)
         self.show_login()
+
+    def _on_map(self, event: tk.Event) -> None:
+        """После разворачивания окна перерисовывает его целиком."""
+        if event.widget is self:
+            self.after_idle(self._redraw)
+
+    def _redraw(self) -> None:
+        """Перерисовывает окно, если его не успели закрыть."""
+        if self.winfo_exists():
+            redraw_window(self)
 
     @frozen
     def show(self, factory: ScreenFactory) -> None:

@@ -1,13 +1,14 @@
 """Оболочка главного окна: боковое меню и область с выбранным разделом."""
 
 import tkinter as tk
-from typing import TYPE_CHECKING, Callable, Dict, Optional
+from datetime import date
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
 
 from pharmacy.models import User
 from pharmacy.services.container import Services
 from pharmacy.services.status import ProductStatus
 from pharmacy.ui import sections, theme
-from pharmacy.ui.freeze import frozen
+from pharmacy.ui.freeze import frozen, not_frozen
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.history import HistoryScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
@@ -30,6 +31,7 @@ ScreenFactory = Callable[[tk.Misc, "MainShell"], tk.Frame]
 RAIL_WIDTH = 44  # ширина полосы, которая остаётся от свёрнутой боковой панели
 SIDEBAR_COLLAPSED = "sidebar_collapsed"  # ключи в предпочтениях пользователя
 TEXT_SIZE = "text_size"
+PREBUILD_DELAY_MS = 120  # пауза перед построением очередного раздела про запас
 
 # Содержимое окна отступает от краёв на отступ макета минус поле под тень карточек.
 CONTENT_PADDING_X = theme.CONTENT_PADDING_X - CARD_SHADOW_PAD
@@ -76,6 +78,9 @@ class MainShell(tk.Frame):
             sections.SETTINGS: SettingsScreen,
         }
         self._current: tk.Frame = None
+        # Готовые экраны разделов: section -> (экран, версия данных при постройке).
+        self._ready: Dict[str, Tuple[tk.Frame, tuple]] = {}
+        self._prebuild_job: Optional[str] = None
         self.section = start
         self._sidebar = Sidebar(
             self,
@@ -142,8 +147,13 @@ class MainShell(tk.Frame):
         self.app.preferences.set(self.user.id, TEXT_SIZE, name)
         self.app.apply_user_changes(self.user, start=self.section)
 
-    def navigate(self, name: str) -> None:
+    def navigate(self, name: str, fresh: bool = False) -> None:
         """Открывает раздел и выделяет его в меню.
+
+        Args:
+            name: Раздел меню.
+            fresh: Построить экран заново, даже если готовый ещё актуален
+                (например, чтобы сбросить несохранённый ввод).
 
         Raises:
             ValueError: Если такого раздела нет.
@@ -151,25 +161,107 @@ class MainShell(tk.Frame):
         factory = self._sections.get(name)
         if factory is None:
             raise ValueError(f"Неизвестный раздел: {name}")
-        self.show(factory, name)
+        self.show(factory, name, reuse=True, fresh=fresh)
 
     @frozen
-    def show(self, factory: ScreenFactory, section: str) -> None:
+    def show(
+        self,
+        factory: ScreenFactory,
+        section: str,
+        reuse: bool = False,
+        fresh: bool = False,
+    ) -> None:
         """Показывает экран в области содержимого.
 
         Args:
             factory: Создаёт экран по (родитель, оболочка).
             section: Раздел меню, который остаётся выделенным (карточка товара
                 относится к разделу «Моя аптечка»).
+            reuse: Брать готовый экран раздела, если данные с его постройки не
+                менялись, и запоминать построенный. Так повторное открытие
+                раздела мгновенное.
+            fresh: С reuse: игнорировать готовый экран и построить новый.
         """
         if self._current is not None:
-            self._current.destroy()
-        self._current = factory(self._content, self)
-        self._current.pack(fill="both", expand=True, pady=(0, theme.CONTENT_PADDING_Y))
+            self._release(self._current)
+        if fresh and section in self._ready:
+            self._ready.pop(section)[0].destroy()
+        screen = self._ready_screen(section) if reuse else None
+        if screen is None:
+            screen = self._build(factory, section if reuse else None)
+        self._current = screen
+        screen.pack(fill="both", expand=True, pady=(0, theme.CONTENT_PADDING_Y))
         self._scroll.scroll_to_top()
         self.section = section
         self._sidebar.set_active(section)
         self.refresh_counters()
+        self._schedule_prebuild()
+
+    def _stamp(self) -> tuple:
+        """Состояние данных: если изменилось, готовые экраны устарели."""
+        return (self.services.data_version, date.today())
+
+    def _build(self, factory: ScreenFactory, section: Optional[str]) -> tk.Frame:
+        """Строит экран; для раздела запоминает его как готовый."""
+        stamp = self._stamp()
+        had_notice = bool(self.notice)  # экран с сообщением одноразовый
+        screen = factory(self._content, self)
+        if section is not None and not had_notice:
+            self._ready[section] = (screen, stamp)
+        return screen
+
+    def _ready_screen(self, section: str) -> Optional[tk.Frame]:
+        """Готовый экран раздела, если он ещё актуален; устаревший удаляет."""
+        entry = self._ready.pop(section, None)
+        if entry is None:
+            return None
+        screen, stamp = entry
+        if stamp == self._stamp():
+            self._ready[section] = entry
+            return screen
+        screen.destroy()
+        return None
+
+    def _release(self, screen: tk.Frame) -> None:
+        """Убирает экран с виду: готовый прячет, остальные удаляет."""
+        if any(screen is entry[0] for entry in self._ready.values()):
+            screen.pack_forget()
+        else:
+            screen.destroy()
+
+    def _schedule_prebuild(self) -> None:
+        """Планирует построение остальных разделов, пока пользователь читает."""
+        if self._prebuild_job is None:
+            self._prebuild_job = self.after(PREBUILD_DELAY_MS, self._prebuild_next)
+
+    def _prebuild_next(self) -> None:
+        """Строит про запас один раздел, которого нет или который устарел."""
+        self._cancel_prebuild()
+        if not self.winfo_exists():
+            return
+        stamp = self._stamp()
+        for name, factory in self._sections.items():
+            entry = self._ready.get(name)
+            if entry is not None and (entry[1] == stamp or entry[0] is self._current):
+                continue
+            if entry is not None:
+                entry[0].destroy()
+                del self._ready[name]
+            with not_frozen():
+                self._build(factory, name)  # не виден, пока его не откроют
+            self._schedule_prebuild()
+            return
+
+    def destroy(self) -> None:
+        """Закрывает оболочку и отменяет отложенное построение разделов."""
+        self._cancel_prebuild()
+        super().destroy()
+
+    def _cancel_prebuild(self) -> None:
+        """Снимает запланированное построение (если оно есть)."""
+        if self._prebuild_job is not None:
+            self.after_cancel(self._prebuild_job)
+            self._prebuild_job = None
 
     def open_kit(self, status: Optional[ProductStatus] = None) -> None:
         """Открывает «Мою аптечку», при необходимости сразу с фильтром по состоянию."""

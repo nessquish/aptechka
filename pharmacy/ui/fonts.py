@@ -8,6 +8,7 @@
 import ctypes
 import sys
 import tkinter as tk
+import weakref
 from pathlib import Path
 from tkinter import font as tkfont
 from typing import Dict, Tuple
@@ -67,10 +68,25 @@ def font_spec(style: str, root: tk.Misc = None) -> Tuple[str, int, str]:
     size, weight = TYPOGRAPHY[style]
     size = scaled(size)
     family, tk_weight = _INTER_FAMILIES[weight]
-    if root is not None and family not in tkfont.families(root):
+    if root is not None and family not in _installed_families(root):
         family = _FALLBACK_FAMILY
         tk_weight = "bold" if weight >= 600 else "normal"
     return family, -size, tk_weight
+
+
+# Список установленных шрифтов запрашивается у Tk долго, а нужен для каждого
+# виджета, поэтому он запоминается отдельно для каждого окна.
+_families: "weakref.WeakKeyDictionary[tk.Misc, frozenset]" = weakref.WeakKeyDictionary()
+
+
+def _installed_families(widget: tk.Misc) -> frozenset:
+    """Возвращает названия установленных шрифтов (кэшируется для окна)."""
+    root = widget._root()
+    found = _families.get(root)
+    if found is None:
+        found = frozenset(tkfont.families(root))
+        _families[root] = found
+    return found
 
 
 def text_width(widget: tk.Misc, text: str, style: str) -> int:

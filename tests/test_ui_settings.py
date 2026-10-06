@@ -17,7 +17,7 @@ class SettingsTestCase(ShellTestCase):
         self.open()
 
     def open(self) -> SettingsScreen:
-        self.shell.navigate(sections.SETTINGS)
+        self.shell.navigate(sections.SETTINGS, fresh=True)
         self.settle()
         return self.page
 

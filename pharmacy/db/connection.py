@@ -33,6 +33,8 @@ class Database:
 
     Attributes:
         path: Путь к файлу базы данных.
+        changes: Сколько раз приложение записывало в базу. Интерфейс по нему
+            понимает, что готовые экраны устарели и их надо построить заново.
     """
 
     def __init__(self, path: Optional[Union[str, Path]] = None) -> None:
@@ -42,6 +44,7 @@ class Database:
             path: Путь к файлу базы. Если не указан, берётся путь из настроек.
         """
         self.path = Path(path) if path is not None else get_db_path()
+        self.changes = 0
 
     def _open(self) -> sqlite3.Connection:
         """Открывает соединение: строки как словари, внешние ключи включены."""
@@ -68,6 +71,8 @@ class Database:
         try:
             yield conn
             conn.commit()
+            if conn.total_changes:
+                self.changes += 1
         except Exception:
             conn.rollback()
             raise
