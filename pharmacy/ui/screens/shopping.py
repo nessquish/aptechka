@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List, Set
 from pharmacy.errors import ValidationError
 from pharmacy.models import ShoppingItem, ShoppingSource
 from pharmacy.services.product_service import UNITS
+from pharmacy.ui.freeze import frozen
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.actionbar import ActionBar
 from pharmacy.ui.widgets.badge import Badge
@@ -128,6 +129,7 @@ class ShoppingScreen(tk.Frame):
 
     # --- данные ---
 
+    @frozen
     def _reload(self) -> None:
         """Заново читает список и перерисовывает вкладки, панель и таблицу."""
         self._visible = self._services.shopping.list_items(

@@ -7,6 +7,7 @@ from pharmacy.models import User
 from pharmacy.services.container import Services
 from pharmacy.services.status import ProductStatus
 from pharmacy.ui import sections, theme
+from pharmacy.ui.freeze import frozen
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.history import HistoryScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
@@ -152,6 +153,7 @@ class MainShell(tk.Frame):
             raise ValueError(f"Неизвестный раздел: {name}")
         self.show(factory, name)
 
+    @frozen
     def show(self, factory: ScreenFactory, section: str) -> None:
         """Показывает экран в области содержимого.
 

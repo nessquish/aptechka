@@ -11,6 +11,7 @@ from pharmacy.services.container import Services, build_services
 from pharmacy.ui import fonts, sections, system, theme
 from pharmacy.ui.appicon import render_app_icon
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
+from pharmacy.ui.freeze import frozen
 from pharmacy.ui.preferences import Preferences
 from pharmacy.ui.screens.shell import TEXT_SIZE, MainShell
 
@@ -50,6 +51,7 @@ class App(tk.Tk):
         self._center(theme.WINDOW_WIDTH, theme.WINDOW_HEIGHT)
         self.show_login()
 
+    @frozen
     def show(self, factory: ScreenFactory) -> None:
         """Заменяет текущий экран новым.
 
