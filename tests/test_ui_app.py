@@ -8,7 +8,7 @@ from shiboken6 import isValid
 from pharmacy.ui import theme
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
 from pharmacy.ui.screens.shell import MainShell
-from tests.qt_helpers import AppTestCase, click, settle
+from tests.qt_helpers import AppTestCase, click, settle, type_text
 
 
 class LoginScreenTest(AppTestCase):
@@ -144,6 +144,162 @@ class RegisterScreenTest(AppTestCase):
         click(self.screen.switch_link)
         self.settle()
         self.assertIsInstance(self.screen, LoginScreen)
+
+
+class EmailCheckTest(AppTestCase):
+    """Проверка почты при регистрации: при уходе с поля, при вводе и по кнопке."""
+
+    MESSAGE = "Введите корректный email, например user@gmail.com"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.app.show_register()
+        self.settle()
+        self.field = self.screen._fields["email"]
+        self.button = self.screen.submit_button
+
+    def type_email(self, text: str) -> None:
+        self.field.set("")
+        type_text(self.field.entry, text)
+
+    def leave(self) -> None:
+        self.field.entry.focus_changed.emit(False)  # Qt сообщает так об уходе с поля
+
+    def fill_others(self) -> None:
+        for key, value in {
+            "username": "Борис",
+            "login": "boris",
+            "password": "password1",
+            "password_repeat": "password1",
+        }.items():
+            self.screen._fields[key].set(value)
+
+    def test_button_is_disabled_until_the_email_is_valid(self):
+        self.assertFalse(self.button.enabled)
+        self.type_email("abc")
+        self.assertFalse(self.button.enabled)
+        self.type_email("abc@")
+        self.assertFalse(self.button.enabled)
+        self.type_email("abc@xyz")
+        self.assertFalse(self.button.enabled)
+        self.type_email("abc@xyz.ru")
+        self.assertTrue(self.button.enabled)
+
+    def test_button_turns_off_again_when_the_email_is_spoiled(self):
+        self.type_email("abc@xyz.ru")
+        self.assertTrue(self.button.enabled)
+        type_text(self.field.entry, " x")  # пробел внутри адреса
+        self.assertFalse(self.button.enabled)
+
+    def test_leaving_a_bad_email_shows_the_error_under_the_field(self):
+        self.type_email("abc@xyz")
+        self.assertIsNone(self.field.error)  # пока печатал, не ругаемся
+        self.leave()
+        self.assertEqual(self.field.error, self.MESSAGE)
+        self.assertTrue(self.field._error_label.isVisible())
+        self.assertEqual(self.field._error_label.text(), self.MESSAGE)
+        self.assertEqual(self.field.frame_colors()[0], theme.LIGHT.red)
+
+    def test_leaving_an_empty_email_shows_the_error_too(self):
+        self.leave()
+        self.assertEqual(self.field.error, self.MESSAGE)
+
+    def test_leaving_a_good_email_shows_nothing(self):
+        for email in ("user@gmail.com", "a@mail.ru", "b@yandex.ru", "c@inbox.ru"):
+            self.type_email(email)
+            self.leave()
+            self.assertIsNone(self.field.error, email)
+
+    def test_error_disappears_as_soon_as_the_email_is_fixed(self):
+        self.type_email("abc@xyz")
+        self.leave()
+        type_text(self.field.entry, ".ru")
+        self.assertIsNone(self.field.error)
+        self.assertTrue(self.button.enabled)
+
+    def test_error_comes_back_while_typing_after_the_first_departure(self):
+        self.type_email("abc@xyz.ru")
+        self.leave()
+        self.assertIsNone(self.field.error)
+        type_text(self.field.entry, "@")
+        self.assertEqual(self.field.error, self.MESSAGE)
+
+    def test_moving_focus_to_another_field_triggers_the_check(self):
+        self.type_email("abc")
+        self.field.entry.setFocus()
+        self.screen._fields["password"].entry.setFocus()
+        self.settle()
+        if self.field.error is None:  # без активного окна Qt не шлёт события фокуса
+            self.leave()
+        self.assertEqual(self.field.error, self.MESSAGE)
+
+    def test_submit_with_a_bad_email_shows_the_error_and_does_not_register(self):
+        self.fill_others()
+        self.type_email("abc@xyz")
+        self.screen._submit()
+        self.settle()
+        self.assertIsNone(self.app.user)
+        self.assertEqual(self.field.error, self.MESSAGE)
+        self.assertEqual(self.count_rows("users"), 1)
+
+    def test_submit_with_an_empty_email_shows_the_error(self):
+        self.fill_others()
+        self.screen._submit()
+        self.assertEqual(self.field.error, self.MESSAGE)
+        self.assertIsNone(self.app.user)
+
+    def test_enter_in_another_field_cannot_bypass_the_check(self):
+        self.fill_others()
+        self.type_email("abc")
+        self.screen._fields["password"].entry.returnPressed.emit()
+        self.settle()
+        self.assertIsNone(self.app.user)
+        self.assertEqual(self.field.error, self.MESSAGE)
+
+    def test_clicking_the_disabled_button_does_nothing(self):
+        self.fill_others()
+        self.type_email("abc")
+        click(self.button)
+        self.settle()
+        self.assertIsNone(self.app.user)
+
+    def test_registration_works_with_a_valid_email(self):
+        self.fill_others()
+        self.type_email("boris@yandex.ru")
+        self.assertTrue(self.button.enabled)
+        click(self.button)
+        self.settle()
+        self.assertEqual(self.app.user.email, "boris@yandex.ru")
+
+    def test_email_is_saved_in_lower_case(self):
+        self.fill_others()
+        self.type_email("Boris@Gmail.COM")
+        self.screen._submit()
+        self.assertEqual(self.app.user.email, "boris@gmail.com")
+
+    def test_any_correct_domain_is_accepted(self):
+        for email in ("x@university.edu", "y@my-firm.company", "z@sub.mail.co.uk"):
+            self.type_email(email)
+            self.assertTrue(self.button.enabled, email)
+
+    def test_service_errors_still_appear_on_the_field(self):
+        self.fill_others()
+        self.type_email("anna@mail.ru")  # такая почта уже занята
+        self.db.execute("UPDATE users SET email = 'anna@mail.ru'")
+        self.screen._submit()
+        self.settle()
+        self.assertEqual(self.field.error, "Эта почта уже зарегистрирована")
+
+    def test_login_screen_has_no_email_check(self):
+        self.app.show_login()
+        self.settle()
+        self.assertTrue(self.screen.submit_button.enabled)
+
+    def test_check_object_reports_the_state(self):
+        self.type_email("abc@xyz.ru")
+        self.assertTrue(self.screen._email_check.valid)
+        self.type_email("abc")
+        self.assertFalse(self.screen._email_check.valid)
 
 
 class NavigationTest(AppTestCase):

@@ -6,10 +6,36 @@ from typing import Optional
 from pharmacy.errors import ValidationError
 
 LOGIN_PATTERN = re.compile(r"^[A-Za-z0-9._-]{3,30}$")
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Адрес: имя до @ (латинские буквы, цифры и _ % + -, части через одиночную точку),
+# затем домен из частей через точку (часть без дефиса по краям, до 63 знаков)
+# и верхний домен из букв (от 2 знаков): gmail.com, mail.ru, yandex.ru и любые другие.
+_LOCAL = r"[A-Za-z0-9_%+\-]+(?:\.[A-Za-z0-9_%+\-]+)*"
+_DOMAIN_PART = r"[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?"
+_TOP_DOMAIN = r"[A-Za-z]{2,24}"
+EMAIL_PATTERN = re.compile(rf"^{_LOCAL}@(?:{_DOMAIN_PART}\.)+{_TOP_DOMAIN}$")
+MAX_EMAIL_LOCAL_LENGTH = 64
+EMAIL_ERROR = "Введите корректный email, например user@gmail.com"
 MIN_PASSWORD_LENGTH = 8
 MAX_USERNAME_LENGTH = 50
 MAX_EMAIL_LENGTH = 100
+
+
+def is_valid_email(email: str) -> bool:
+    """Проверяет формат адреса электронной почты (без обращения к базе).
+
+    Подходит для проверки прямо во время ввода: пробелы по краям не мешают.
+
+    Args:
+        email: Адрес, введённый пользователем.
+
+    Returns:
+        True, если адрес записан верно: есть имя, @, домен с точкой и верхний
+        домен из букв, нет пробелов и лишних символов.
+    """
+    email = email.strip()
+    if len(email) > MAX_EMAIL_LENGTH or not EMAIL_PATTERN.match(email):
+        return False
+    return len(email.split("@", 1)[0]) <= MAX_EMAIL_LOCAL_LENGTH
 
 
 def validate_login(login: str) -> str:
@@ -73,10 +99,8 @@ def validate_email(email: str) -> str:
     email = email.strip().lower()
     if not email:
         raise ValidationError("Введите адрес электронной почты", "email")
-    if len(email) > MAX_EMAIL_LENGTH or not EMAIL_PATTERN.match(email):
-        raise ValidationError(
-            "Введите адрес электронной почты в формате name@example.com", "email"
-        )
+    if not is_valid_email(email):
+        raise ValidationError(EMAIL_ERROR, "email")
     return email
 
 

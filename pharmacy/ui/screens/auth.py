@@ -16,6 +16,7 @@ from pharmacy.ui.widgets.common import label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui import theme
+from pharmacy.ui.email_check import EmailCheck
 from pharmacy.ui.theme import SHADOW_PAD, palette
 
 if TYPE_CHECKING:
@@ -294,10 +295,17 @@ class RegisterScreen(_AuthScreen):
         self._add_footer(
             "Зарегистрироваться", "Уже есть аккаунт?", "Войти", app.show_login
         )
+        # Кнопка недоступна, пока в поле почты не корректный адрес.
+        self._email_check = EmailCheck(
+            self._fields["email"], self.submit_button.set_enabled
+        )
         self._fields["username"].focus_field()
 
     def _submit(self) -> None:
         self._reset_errors()
+        if not self._email_check.check():
+            self._fields["email"].focus_field()
+            return
         values = {key: field.get() for key, field in self._fields.items()}
         try:
             user = self._app.services.auth.register(

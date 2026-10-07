@@ -496,6 +496,17 @@ class TextField(LabeledBox):
         """Переводит фокус в поле."""
         self._entry.setFocus()
 
+    def connect_edited(self, slot: Callable[[str], None]) -> None:
+        """Вызывает функцию после каждой правки текста пользователем."""
+        if self._multiline:
+            self._entry.textChanged.connect(lambda: slot(self.get()))
+        else:
+            self._entry.textEdited.connect(slot)
+
+    def connect_blur(self, slot: Callable[[], None]) -> None:
+        """Вызывает функцию, когда пользователь ушёл с поля (потеря фокуса)."""
+        self._entry.focus_changed.connect(lambda focused: None if focused else slot())
+
     def bind_submit(self, command: Callable[[], None]) -> None:
         """Вызывает команду по нажатию Enter в однострочном поле."""
         if not self._multiline:
