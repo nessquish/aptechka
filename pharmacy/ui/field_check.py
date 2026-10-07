@@ -23,20 +23,6 @@ def login_error(text: str) -> Optional[str]:
     return None
 
 
-LOGIN_OR_EMAIL_EMPTY = "Введите логин или эл. почту"
-
-
-def login_or_email_error(text: str) -> Optional[str]:
-    """Ошибка в поле «Логин / Эл. почта» или None, если записано верно.
-
-    В логине не бывает «@», поэтому по ней понятно, что ввели: почту или логин.
-    """
-    text = text.strip()
-    if not text:
-        return LOGIN_OR_EMAIL_EMPTY
-    return email_error(text) if "@" in text else login_error(text)
-
-
 class LiveCheck:
     """Следит за полем и сообщает, можно ли продолжать.
 

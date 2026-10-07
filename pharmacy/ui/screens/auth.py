@@ -16,12 +16,7 @@ from pharmacy.ui.widgets.common import label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui import theme
-from pharmacy.ui.field_check import (
-    LiveCheck,
-    email_error,
-    login_error,
-    login_or_email_error,
-)
+from pharmacy.ui.field_check import LiveCheck, email_error, login_error
 from pharmacy.ui.theme import SHADOW_PAD, palette
 
 if TYPE_CHECKING:
@@ -227,15 +222,10 @@ class LoginScreen(_AuthScreen):
         self._add_footer(
             "Войти", "Нет аккаунта?", "Зарегистрироваться", app.show_register
         )
-        # Вход по логину или по почте на выбор: поле краснеет, если там ни то ни другое.
-        self._login_check = LiveCheck(self._fields["login"], login_or_email_error)
         self._fields["login"].focus_field()
 
     def _submit(self) -> None:
         self._reset_errors()
-        if not self._login_check.check():
-            self._fields["login"].focus_field()
-            return
         password = self._fields["password"].get()
         try:
             user = self._app.services.auth.login(self._fields["login"].get(), password)

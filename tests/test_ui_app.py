@@ -88,48 +88,36 @@ class LoginScreenTest(AppTestCase):
             self.assertIsNotNone(self.screen._fields["password"].error, login)
             self.assertEqual(self.screen._banner.text, "Неверный логин или пароль")
 
-    def test_malformed_email_is_marked_when_leaving_the_field(self):
-        field = self.screen._fields["login"]
-        type_text(field.entry, "anna@mail")
-        self.assertIsNone(field.error)
-        field.entry.focus_changed.emit(False)
-        self.assertEqual(
-            field.error, "Введите корректный email, например user@gmail.com"
-        )
-
-    def test_bad_login_is_marked_when_leaving_the_field(self):
-        field = self.screen._fields["login"]
-        type_text(field.entry, "ab")
-        field.entry.focus_changed.emit(False)
-        self.assertIn("от 3 до 30 символов", field.error)
-
-    def test_good_login_or_email_is_not_marked(self):
-        for text in ("anna", "anna@mail.ru"):
+    def test_nothing_is_red_while_typing_or_leaving_the_fields(self):
+        # Как в большинстве приложений: вход проверяется только по кнопке.
+        for text in ("ab", "anna@mail", "my login", ""):
             self.app.show_login()
             self.settle()
             field = self.screen._fields["login"]
             type_text(field.entry, text)
             field.entry.focus_changed.emit(False)
+            self.screen._fields["password"].entry.focus_changed.emit(False)
             self.assertIsNone(field.error, text)
+            self.assertIsNone(self.screen._fields["password"].error, text)
+            self.assertFalse(self.screen._banner.isVisible(), text)
 
-    def test_empty_field_is_marked_when_leaving_it(self):
-        field = self.screen._fields["login"]
-        field.entry.focus_changed.emit(False)
-        self.assertEqual(field.error, "Введите логин или эл. почту")
+    def test_odd_looking_login_is_checked_by_the_service_not_by_the_form(self):
+        for text in ("ab", "anna@mail", "my login"):
+            self.app.show_login()
+            self.settle()
+            self.fill(text, "password1")
+            self.assertIsInstance(self.screen, LoginScreen)
+            self.assertEqual(
+                self.screen._banner.text, "Неверный логин или пароль", text
+            )
+            self.assertIsNotNone(self.screen._fields["login"].error, text)
+            self.assertIsNotNone(self.screen._fields["password"].error, text)
 
-    def test_error_goes_away_when_the_value_is_fixed(self):
-        field = self.screen._fields["login"]
-        type_text(field.entry, "ab")
-        field.entry.focus_changed.emit(False)
-        type_text(field.entry, "c")
-        self.assertIsNone(field.error)
-
-    def test_bad_format_does_not_reach_the_service(self):
-        self.screen._fields["login"].set("anna@mail")
-        self.screen._fields["password"].set("password1")
-        self.screen._submit()
-        self.assertIsNone(self.app.user)
+    def test_red_fields_clear_when_the_user_types_again(self):
+        self.fill("anna", "wrong-password")
         self.assertIsNotNone(self.screen._fields["login"].error)
+        type_text(self.screen._fields["login"].entry, "x")
+        self.assertIsNone(self.screen._fields["login"].error)
 
     def test_link_opens_registration(self):
         click(self.screen.switch_link)
