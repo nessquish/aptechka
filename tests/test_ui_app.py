@@ -295,6 +295,88 @@ class EmailCheckTest(AppTestCase):
         self.settle()
         self.assertTrue(self.screen.submit_button.enabled)
 
+    # --- логин ---
+
+    def login_field(self):
+        return self.screen._fields["login"]
+
+    def type_login(self, text: str) -> None:
+        self.login_field().set("")
+        type_text(self.login_field().entry, text)
+
+    def leave_login(self) -> None:
+        self.login_field().entry.focus_changed.emit(False)
+
+    def test_bad_login_is_marked_red_when_the_user_leaves_the_field(self):
+        for login in ("ab", "my login", "логин", "a" * 31, "ab!"):
+            self.app.show_register()  # чистая форма: поле ещё не «тронуто»
+            self.settle()
+            self.type_login(login)
+            self.assertIsNone(self.login_field().error, login)  # пока печатает
+            self.leave_login()
+            self.assertIsNotNone(self.login_field().error, login)
+            self.assertTrue(self.login_field()._error_label.isVisible(), login)
+            self.assertEqual(
+                self.login_field().frame_colors()[0], theme.LIGHT.red, login
+            )
+
+    def test_login_error_text_explains_the_rule(self):
+        self.type_login("ab")
+        self.leave_login()
+        self.assertIn("от 3 до 30 символов", self.login_field().error)
+
+    def test_empty_login_asks_to_enter_it(self):
+        self.leave_login()
+        self.assertEqual(self.login_field().error, "Введите логин")
+
+    def test_good_login_is_not_marked(self):
+        for login in ("nessquish", "a.b-c_1", "abc"):
+            self.type_login(login)
+            self.leave_login()
+            self.assertIsNone(self.login_field().error, login)
+
+    def test_login_error_goes_away_when_fixed(self):
+        self.type_login("ab")
+        self.leave_login()
+        type_text(self.login_field().entry, "c")
+        self.assertIsNone(self.login_field().error)
+
+    def test_login_error_comes_back_while_typing_after_leaving(self):
+        self.type_login("abc")
+        self.leave_login()
+        type_text(self.login_field().entry, " d")
+        self.assertIsNotNone(self.login_field().error)
+
+    def test_bad_login_does_not_disable_the_button_by_itself(self):
+        self.type_login("ab")
+        self.type_email("abc@xyz.ru")
+        self.assertTrue(self.button.enabled)
+
+    def test_submit_marks_both_login_and_email_at_once(self):
+        self.fill_others()
+        self.type_login("ab")
+        self.type_email("abc")
+        self.screen._submit()
+        self.assertIsNotNone(self.login_field().error)
+        self.assertEqual(self.field.error, self.MESSAGE)
+        self.assertIsNone(self.app.user)
+
+    def test_submit_puts_the_cursor_into_the_first_wrong_field(self):
+        self.fill_others()
+        self.type_login("ab")
+        self.type_email("abc")
+        self.screen._submit()
+        self.settle()
+        self.assertEqual(self.count_rows("users"), 1)
+
+    def test_good_login_and_email_register(self):
+        self.fill_others()
+        self.type_login("boris")
+        self.type_email("boris@mail.ru")
+        self.screen._submit()
+        self.settle()
+        self.assertEqual(self.app.user.login, "boris")
+
     def test_check_object_reports_the_state(self):
         self.type_email("abc@xyz.ru")
         self.assertTrue(self.screen._email_check.valid)

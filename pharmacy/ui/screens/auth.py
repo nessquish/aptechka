@@ -16,7 +16,7 @@ from pharmacy.ui.widgets.common import label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui import theme
-from pharmacy.ui.email_check import EmailCheck
+from pharmacy.ui.field_check import LiveCheck, email_error, login_error
 from pharmacy.ui.theme import SHADOW_PAD, palette
 
 if TYPE_CHECKING:
@@ -295,16 +295,23 @@ class RegisterScreen(_AuthScreen):
         self._add_footer(
             "Зарегистрироваться", "Уже есть аккаунт?", "Войти", app.show_login
         )
-        # Кнопка недоступна, пока в поле почты не корректный адрес.
-        self._email_check = EmailCheck(
-            self._fields["email"], self.submit_button.set_enabled
+        # Логин и почта подсвечиваются красным, если записаны неверно. Кнопка
+        # недоступна, пока в поле почты не корректный адрес.
+        self._login_check = LiveCheck(self._fields["login"], login_error)
+        self._email_check = LiveCheck(
+            self._fields["email"], email_error, self.submit_button.set_enabled
         )
         self._fields["username"].focus_field()
 
     def _submit(self) -> None:
         self._reset_errors()
-        if not self._email_check.check():
-            self._fields["email"].focus_field()
+        checks = (
+            ("login", self._login_check.check()),
+            ("email", self._email_check.check()),
+        )
+        wrong = [key for key, correct in checks if not correct]
+        if wrong:  # ошибки показаны под полями, курсор в первое неверное
+            self._fields[wrong[0]].focus_field()
             return
         values = {key: field.get() for key, field in self._fields.items()}
         try:
