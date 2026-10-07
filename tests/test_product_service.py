@@ -406,6 +406,94 @@ class StatusSortTest(ProductServiceTestCase):
             self.names("status_up")
 
 
+class SortDirectionsTest(ProductServiceTestCase):
+    """Подвиды сортировки: каждое направление по смыслу."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        meds = self.category_id("Лекарства")
+        chemistry = self.category_id("Бытовая химия")
+        self.add(
+            name="Борная кислота",
+            quantity="5",
+            expiry_date="01.03.2027",
+            storage_place="",
+        )
+        self.add(
+            name="аспирин",
+            quantity="20",
+            expiry_date="01.01.2027",
+            storage_place="Шкаф",
+        )
+        self.add(
+            name="Вата",
+            quantity="1",
+            expiry_date="",
+            storage_place="Ящик",
+            category_id=chemistry,
+        )
+        self.add(
+            name="Гель",
+            quantity="10",
+            expiry_date="01.06.2028",
+            storage_place="",
+            category_id=meds,
+        )
+
+    def names(self, sort):
+        views = self.service.list_products(self.user_id, sort=sort, today=TODAY)
+        return [view.product.name for view in views]
+
+    def test_name_both_ways_ignores_case(self):
+        self.assertEqual(
+            self.names("name"), ["аспирин", "Борная кислота", "Вата", "Гель"]
+        )
+        self.assertEqual(
+            self.names("name_desc"), ["Гель", "Вата", "Борная кислота", "аспирин"]
+        )
+
+    def test_quantity_both_ways(self):
+        self.assertEqual(
+            self.names("quantity_desc"), ["аспирин", "Гель", "Борная кислота", "Вата"]
+        )
+        self.assertEqual(
+            self.names("quantity"), ["Вата", "Борная кислота", "Гель", "аспирин"]
+        )
+
+    def test_expiry_both_ways_keeps_empty_dates_last(self):
+        self.assertEqual(
+            self.names("expiry"), ["аспирин", "Борная кислота", "Гель", "Вата"]
+        )
+        self.assertEqual(
+            self.names("expiry_desc"), ["Гель", "Борная кислота", "аспирин", "Вата"]
+        )
+
+    def test_added_both_ways(self):
+        self.db.execute("UPDATE products SET created_at = '2026-01-01 10:00:00'")
+        self.db.execute(
+            "UPDATE products SET created_at = '2026-09-09 10:00:00' WHERE name = 'Вата'"
+        )
+        self.assertEqual(self.names("added")[0], "Вата")
+        self.assertEqual(self.names("added_asc")[-1], "Вата")
+
+    def test_category_both_ways(self):
+        asc = self.names("category")
+        self.assertEqual(asc[0], "Вата")  # «Бытовая химия» раньше «Лекарства»
+        self.assertEqual(self.names("category_desc")[-1], "Вата")
+
+    def test_place_both_ways_keeps_empty_places_last(self):
+        self.assertEqual(
+            self.names("place"), ["аспирин", "Вата", "Борная кислота", "Гель"]
+        )
+        self.assertEqual(
+            self.names("place_desc"), ["Вата", "аспирин", "Борная кислота", "Гель"]
+        )
+
+    def test_unknown_direction_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.names("name_up")
+
+
 class ListProductsTest(ProductServiceTestCase):
     """Таблица «Моя аптечка»: состояния, поиск, фильтры, сортировка."""
 

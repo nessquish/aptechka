@@ -160,8 +160,10 @@ class SaveTest(AddProductTestCase):
         self.settle()
         self.assertIsInstance(self.page, MyKitScreen)
         self.assertEqual(self.shell.section, sections.MY_KIT)
+        # Товар встал по сортировке (по состоянию): норма в конце, на второй странице,
+        # и таблица открыта сразу на ней.
         self.assertIn("Аспирин", self.names())
-        self.assertEqual(self.page.table.row_count, 8)  # первая страница из 9 товаров
+        self.assertEqual(self.page.table.row_count, 1)
 
     def test_saving_from_the_kit_refreshes_the_table(self):
         self.open(sections.MY_KIT)

@@ -5,7 +5,7 @@ from typing import List
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from pharmacy.ui import theme
 from pharmacy.ui.widgets.button import Button
@@ -632,12 +632,37 @@ class DataTableTest(Holder):
             "Ничего не найдено", [w.text() for w in table.findChildren(type(label("")))]
         )
 
-    def test_sort_arrow_is_shown_for_one_column(self):
+    def test_sort_caption_is_shown_only_next_to_one_column(self):
         table = self.make()
-        table.set_sorted(1)
-        self.assertEqual(table.sorted_column, 1)
-        table.set_sorted(None)
-        self.assertIsNone(table.sorted_column)
+        table.set_sort_caption(1, "А-Я")
+        self.assertEqual(table.caption_column, 1)
+        self.assertEqual(table.caption, "А-Я")
+        texts = [w.text() for w in table._header_cells[1].findChildren(QLabel)]
+        self.assertEqual(texts, ["Срок", "А-Я"])
+        for other in (0, 2):
+            texts = [w.text() for w in table._header_cells[other].findChildren(QLabel)]
+            self.assertNotIn("А-Я", texts)
+        table.set_sort_caption(None)
+        self.assertIsNone(table.caption_column)
+
+    def test_caption_is_purple(self):
+        table = self.make()
+        table.set_sort_caption(0, "9-0")
+        caption = table._header_cells[0].findChildren(QLabel)[-1]
+        self.assertEqual(
+            caption.palette().windowText().color().name().upper(),
+            theme.LIGHT.primary.upper(),
+        )
+
+    def test_header_click_and_tip(self):
+        calls: List[int] = []
+        table = self.make()
+        table.set_header_click(0, lambda: calls.append(1), "Подсказка")
+        click(table._header_cells[0])
+        self.assertEqual(calls, [1])
+        self.assertEqual(table._header_cells[0].toolTip(), "Подсказка")
+        table.set_header_tip(0, "Другая")
+        self.assertEqual(table._header_cells[0].toolTip(), "Другая")
 
     def test_columns_follow_weights(self):
         table = self.make()

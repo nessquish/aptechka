@@ -239,14 +239,17 @@ class MainShell(QWidget):
     def add_product(self) -> None:
         """Сразу открывает окно добавления товара поверх текущего экрана.
 
-        После сохранения показывается «Моя аптечка» с новым товаром в таблице.
+        После сохранения показывается «Моя аптечка»: товар стоит в таблице там,
+        куда его ставит выбранная сортировка (если сортировку не выбирали, по
+        состоянию), и таблица открыта на нужной странице.
         """
-        ProductFormDialog(
-            self.app,
-            self.services,
-            self.user.id,
-            lambda _view: self.navigate(sections.MY_KIT),
-        )
+
+        def saved(view) -> None:
+            self.navigate(sections.MY_KIT)
+            if view is not None and isinstance(self.current, MyKitScreen):
+                self.current.reveal(view.product.id)
+
+        ProductFormDialog(self.app, self.services, self.user.id, saved)
 
     def set_theme(self, name: str) -> None:
         """Сохраняет тему в настройках пользователя и сразу применяет её.

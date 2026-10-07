@@ -8,7 +8,6 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 from pharmacy.ui.fonts import line_height
-from pharmacy.ui.icons import icon_pixmap
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.common import clickable, label, pad
 from pharmacy.ui.theme import palette
@@ -109,8 +108,8 @@ class DataTable(QWidget):
         super().__init__(parent)
         self._card = card
         self._columns = list(columns)
-        self._sorted: Optional[int] = None
-        self._ascending = False
+        self._caption_column: Optional[int] = None
+        self._caption = ""
         self._header_clicks: Dict[int, Callable[[], None]] = {}
         self._header_tips: Dict[int, str] = {}
         self._rounded_top = True
@@ -161,12 +160,13 @@ class DataTable(QWidget):
             0,
             Qt.AlignmentFlag.AlignVCenter,
         )
-        if index == self._sorted:
-            arrow = QLabel()
-            name = "arrow-up" if self._ascending else "arrow-down"
-            arrow.setPixmap(icon_pixmap(name, SORT_ICON, palette().primary))
+        if index == self._caption_column and self._caption:
             layout.addSpacing(SORT_GAP)
-            layout.addWidget(arrow, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addWidget(
+                label(self._caption, "small_medium", "primary", bare=True),
+                0,
+                Qt.AlignmentFlag.AlignVCenter,
+            )
         layout.addStretch(1)
         if index in self._header_clicks:
             clickable(cell, self._header_clicks[index])
@@ -174,15 +174,18 @@ class DataTable(QWidget):
             cell.setToolTip(self._header_tips[index])
         return cell
 
-    def set_sorted(self, index: Optional[int], ascending: bool = False) -> None:
-        """Показывает стрелку сортировки у столбца (None убирает стрелку).
+    def set_sort_caption(self, index: Optional[int], text: str = "") -> None:
+        """Показывает фиолетовую подпись сортировки рядом с заголовком столбца.
+
+        Подпись есть только у столбца, по которому таблица отсортирована сейчас
+        («А-Я», «9-0» ...). None убирает подпись.
 
         Args:
             index: Номер столбца.
-            ascending: Стрелка вверх (по возрастанию) вместо стрелки вниз.
+            text: Короткая подпись.
         """
-        self._sorted = index
-        self._ascending = ascending
+        self._caption_column = index
+        self._caption = text
         self._build_header()
 
     def set_header_click(
@@ -204,11 +207,6 @@ class DataTable(QWidget):
         self._header_tips[index] = tip
         if index < len(self._header_cells):
             self._header_cells[index].setToolTip(tip)
-
-    @property
-    def ascending(self) -> bool:
-        """Показана ли стрелка вверх."""
-        return self._ascending
 
     def set_rounded_top(self, rounded: bool) -> None:
         """Красит шапку у верхнего края карточки.
@@ -318,9 +316,14 @@ class DataTable(QWidget):
         ]
 
     @property
-    def sorted_column(self) -> Optional[int]:
-        """Столбец, у которого показана стрелка сортировки."""
-        return self._sorted
+    def caption_column(self) -> Optional[int]:
+        """Столбец, рядом с заголовком которого показана подпись сортировки."""
+        return self._caption_column
+
+    @property
+    def caption(self) -> str:
+        """Подпись сортировки в шапке («А-Я»)."""
+        return self._caption
 
     def _wrap(
         self, content: Optional[QWidget], column: Column, padding_y: int

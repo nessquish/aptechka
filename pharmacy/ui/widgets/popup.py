@@ -11,6 +11,14 @@ from pharmacy.ui.paint import Shadow, begin, draw_shadows, fill_rounded, qcolor
 from pharmacy.ui.theme import mix, palette
 
 Option = Tuple[object, str]  # (значение, подпись)
+# Следующая ступень выбора: (варианты, выделенное значение, что вызвать при выборе,
+# что вызвать для ещё одной ступени).
+Stage = Tuple[
+    Sequence[Option],
+    object,
+    Callable[[object], None],
+    Optional[Callable[[object], Optional[Tuple]]],
+]
 
 ITEM_HEIGHT = 30
 ITEM_PADDING_X = 12
@@ -39,6 +47,7 @@ class PopupList(QWidget):
         on_pick: Callable[[object], None],
         on_close: Optional[Callable[[], None]] = None,
         field_rect: Optional[QRectF] = None,
+        on_stage: Optional[Callable[[object], Optional[Stage]]] = None,
     ) -> None:
         """Открывает список под полем.
 
@@ -49,6 +58,9 @@ class PopupList(QWidget):
             on_pick: Вызывается со значением выбранного варианта.
             on_close: Вызывается при закрытии списка.
             field_rect: Видимая рамка поля внутри anchor (по умолчанию весь anchor).
+            on_stage: Для списка из двух ступеней (вид сортировки, затем подвид).
+                Вызывается с выбранным значением; если вернула следующую ступень,
+                список в том же окне меняется на неё и остаётся открытым.
         """
         self._window = anchor.window()
         super().__init__(self._window)
@@ -56,19 +68,32 @@ class PopupList(QWidget):
         self._choices: List[Option] = list(options)
         self._selected = selected
         self._on_pick = on_pick
+        self._on_stage = on_stage
         self._on_close = on_close
         self._hover = -1
         self._offset = 0
         self._closed = False
+        self._box = field_rect or QRectF(anchor.rect())
+        self._fit()
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.show()
+        self.raise_()
+        self.setFocus()
+        QApplication.instance().installEventFilter(self)
 
-        box = field_rect or QRectF(anchor.rect())
-        longest = max((text_width(label, "body") for _, label in options), default=0)
+    def _fit(self) -> None:
+        """Подгоняет размер и место списка под его варианты и поле."""
+        box = self._box
+        longest = max(
+            (text_width(label, "body") for _, label in self._choices), default=0
+        )
         self._inner_width = max(round(box.width()), longest + 2 * ITEM_PADDING_X)
         visible = min(len(self._choices), MAX_VISIBLE)
         self._inner_height = visible * ITEM_HEIGHT + 2 * LIST_PADDING
         total_width = self._inner_width + 2 * SHADOW_PAD
         total_height = self._inner_height + TOP_PAD + SHADOW_PAD
-
+        anchor = self._anchor
         corner = anchor.mapTo(self._window, QPoint(round(box.left()), 0))
         bottom = anchor.mapTo(self._window, QPoint(0, round(box.bottom()))).y()
         top_of_field = anchor.mapTo(self._window, QPoint(0, round(box.top()))).y()
@@ -77,12 +102,35 @@ class PopupList(QWidget):
         if y + total_height > self._window.height() and top_of_field > total_height:
             y = top_of_field - total_height + SHADOW_PAD  # над полем
         self.setGeometry(x, y, total_width, total_height)
-        self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.show()
-        self.raise_()
-        self.setFocus()
-        QApplication.instance().installEventFilter(self)
+
+    def replace_options(
+        self,
+        options: Sequence[Option],
+        selected: object,
+        on_pick: Callable[[object], None],
+        on_stage: Optional[Callable[[object], Optional[Stage]]] = None,
+    ) -> None:
+        """Меняет варианты в том же открытом списке (следующая ступень выбора).
+
+        Args:
+            options: Новые варианты (значение, подпись).
+            selected: Значение, которое выделяется жирным.
+            on_pick: Вызывается с выбранным значением.
+            on_stage: Как в конструкторе: может вернуть ещё одну ступень.
+        """
+        self._choices = list(options)
+        self._selected = selected
+        self._on_pick = on_pick
+        self._on_stage = on_stage
+        self._hover = -1
+        self._offset = 0
+        self._fit()
+        self.update()
+
+    @property
+    def options(self) -> List[Option]:
+        """Варианты, которые показаны сейчас."""
+        return list(self._choices)
 
     def sizeHint(self) -> QSize:
         return self.size()
@@ -155,6 +203,11 @@ class PopupList(QWidget):
         index = self._index_at(pos.y())
         if index >= 0:
             value = self._choices[index][0]
+            if self._on_stage is not None:
+                stage = self._on_stage(value)
+                if stage is not None:  # следующая ступень в том же списке
+                    self.replace_options(*stage)
+                    return
             self.close_list()
             self._on_pick(value)
 

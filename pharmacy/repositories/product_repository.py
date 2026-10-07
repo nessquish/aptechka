@@ -15,9 +15,25 @@ from pharmacy.repositories.base import BaseRepository
 # пользователя: так в запрос не может попасть чужой SQL.
 SORT_ORDERS = {
     "name": "casefold(p.name), p.id",
+    "name_desc": "casefold(p.name) DESC, p.id",
+    # Товары без срока годности всегда в конце, в какую сторону ни сортируй.
     "expiry": "p.expiry_date IS NULL, p.expiry_date, casefold(p.name)",
+    "expiry_desc": "p.expiry_date IS NULL, p.expiry_date DESC, casefold(p.name)",
     "quantity": "p.quantity, casefold(p.name)",
+    "quantity_desc": "p.quantity DESC, casefold(p.name)",
     "added": "p.created_at DESC, p.id DESC",
+    "added_asc": "p.created_at, p.id",
+    "category": "casefold(c.name), casefold(p.name)",
+    "category_desc": "casefold(c.name) DESC, casefold(p.name)",
+    # Товары без места хранения всегда в конце.
+    "place": (
+        "COALESCE(p.storage_place, '') = '', casefold(p.storage_place),"
+        " casefold(p.name)"
+    ),
+    "place_desc": (
+        "COALESCE(p.storage_place, '') = '', casefold(p.storage_place) DESC,"
+        " casefold(p.name)"
+    ),
 }
 
 _SELECT = (

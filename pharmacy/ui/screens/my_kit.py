@@ -15,10 +15,11 @@ from pharmacy.ui.widgets.empty import EmptyState
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.page import ACTION_INSET, PageHeader
 from pharmacy.ui.widgets.select import Select
+from pharmacy.ui.widgets.sortselect import SortSelect
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
-from pharmacy.services.product_service import SORT_STATUS_OK, ProductView
+from pharmacy.services.product_service import ProductView
 from pharmacy.services.status import ProductStatus
-from pharmacy.ui import labels
+from pharmacy.ui import labels, sorting
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
@@ -27,21 +28,8 @@ if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
 
 PAGE_SIZE = 8
-SORT_STATE = "status"  # сортировка по состоянию; направление задаёт флаг
-STATE_COLUMN = 6  # столбец «Состояние»
 SEARCH_DELAY_MS = 250
-SORTS = (
-    ("expiry", "срок годности"),
-    ("name", "название"),
-    ("quantity", "количество"),
-    ("added", "дата добавления"),
-    (SORT_STATE, "по состоянию"),
-)
-# Какой столбец помечается стрелкой при каждой сортировке.
-SORT_COLUMN = {"name": 0, "quantity": 2, "expiry": 4, SORT_STATE: STATE_COLUMN}
-TIP_PROBLEMS_FIRST = "Сначала просроченные. Нажмите, чтобы показать сначала норму"
-TIP_OK_FIRST = "Сначала норма. Нажмите, чтобы показать сначала просроченные"
-TIP_SORT_BY_STATE = "Нажмите, чтобы отсортировать по состоянию"
+SORT_PREFERENCE = "kit_sort"  # выбранная сортировка запоминается для пользователя
 COLUMNS = (
     Column("Название", 30),
     Column("Категория", 20),
@@ -75,8 +63,11 @@ class MyKitScreen(QWidget):
         self._search = ""
         self._category: Optional[int] = None
         self._status = status
-        self._sort = SORTS[0][0]
-        self._problems_first = True  # при сортировке по состоянию: просроченные сверху
+        saved = shell.app.preferences.get(
+            self._user.id, SORT_PREFERENCE, sorting.DEFAULT_SORT
+        )
+        # Сортировка не выбрана или запомнено что-то неизвестное: по состоянию.
+        self._sort = saved if sorting.is_sort(saved) else sorting.DEFAULT_SORT
         self._page = 1
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -146,13 +137,7 @@ class MyKitScreen(QWidget):
         self.status_select = Select(
             states, self._status, compact=True, on_change=self._on_status
         )
-        self.sort_select = Select(
-            SORTS,
-            self._sort,
-            compact=True,
-            prefix="Сортировка: ",
-            on_change=self._on_sort,
-        )
+        self.sort_select = SortSelect(self._sort, self._on_sort)
         for select in (self.category_select, self.status_select, self.sort_select):
             bar.addWidget(select, 0, Qt.AlignmentFlag.AlignTop)
         self._layout.addLayout(bar)
@@ -177,43 +162,67 @@ class MyKitScreen(QWidget):
         self._reload()
 
     def _on_sort(self, value: object) -> None:
-        self._sort = value
-        self._problems_first = True
+        """Выбран подвид сортировки: запоминаем его и перерисовываем таблицу."""
+        self._sort = str(value)
+        self._shell.app.preferences.set(self._user.id, SORT_PREFERENCE, self._sort)
         self._page = 1
         self._reload()
 
-    def _toggle_state_sort(self) -> None:
-        """Нажатие на заголовок «Состояние»: включает сортировку по состоянию, а
-        если она уже включена, меняет направление (просроченные или норма сверху).
+    def _on_header(self, kind: sorting.SortKind) -> None:
+        """Нажатие на заголовок столбца.
+
+        Если таблица отсортирована по этому столбцу, меняется подвид («от А до Я»
+        на «от Я до А»), иначе включается сортировка по нему.
         """
-        if self._sort == SORT_STATE:
-            self._problems_first = not self._problems_first
+        if sorting.kind_of(self._sort) is kind:
+            value = sorting.toggled(self._sort)
         else:
-            self._sort = SORT_STATE
-            self._problems_first = True
-            self.sort_select.set(SORT_STATE)
-        self._page = 1
-        self._reload()
-
-    def _sort_order(self) -> str:
-        """Вид сортировки для сервиса с учётом направления по состоянию."""
-        if self._sort == SORT_STATE and not self._problems_first:
-            return SORT_STATUS_OK
-        return self._sort
+            value = kind.choices[0].value
+        self.sort_select.set(value)
+        self._on_sort(value)
 
     @property
-    def problems_first(self) -> bool:
-        """При сортировке по состоянию просроченные стоят сверху."""
-        return self._problems_first
+    def sort(self) -> str:
+        """Значение выбранной сортировки (подвид, например ``name_desc``)."""
+        return self._sort
+
+    def _load(self) -> List[ProductView]:
+        """Товары по текущим поиску, фильтрам и сортировке."""
+        views = self._services.products.list_products(
+            self._user.id,
+            search=self._search,
+            category_id=self._category,
+            status=self._status,
+            sort=self._sort,
+        )
+        if sorting.kind_of(self._sort).key == "category":
+            # В таблице категории показаны короткими названиями («Мед. товары»),
+            # поэтому и порядок считается по ним: он должен быть виден глазами.
+            views.sort(
+                key=lambda v: labels.short_category(v.product.category_name).casefold(),
+                reverse=self._sort.endswith("_desc"),
+            )
+        return views
+
+    def reveal(self, product_id: int) -> None:
+        """Переходит на страницу таблицы, где стоит товар (после добавления)."""
+        views = self._load()
+        for index, view in enumerate(views):
+            if view.product.id == product_id:
+                self._page = index // PAGE_SIZE + 1
+                self._reload()
+                return
 
     # --- таблица ---
 
     def _build_table(self) -> None:
         card = Card(flush=True)
         self._table = DataTable(COLUMNS, card)
-        self._table.set_header_click(
-            STATE_COLUMN, self._toggle_state_sort, TIP_SORT_BY_STATE
-        )
+        for kind in sorting.SORT_KINDS:
+            if kind.column is not None:
+                self._table.set_header_click(
+                    kind.column, lambda k=kind: self._on_header(k)
+                )
         card.body.addWidget(self._table)
         self._footer = QVBoxLayout()
         self._footer.setContentsMargins(0, 0, 0, 0)
@@ -223,24 +232,14 @@ class MyKitScreen(QWidget):
 
     def _reload(self) -> None:
         """Заново читает товары по текущим условиям и перерисовывает таблицу."""
-        views = self._services.products.list_products(
-            self._user.id,
-            search=self._search,
-            category_id=self._category,
-            status=self._status,
-            sort=self._sort_order(),
-        )
+        views = self._load()
         pages = max(math.ceil(len(views) / PAGE_SIZE), 1)
         self._page = min(self._page, pages)
         start = (self._page - 1) * PAGE_SIZE
         shown = views[start : start + PAGE_SIZE]
         self.setUpdatesEnabled(False)
         try:
-            self._table.set_sorted(
-                SORT_COLUMN.get(self._sort),
-                ascending=self._sort == SORT_STATE and not self._problems_first,
-            )
-            self._table.set_header_tip(STATE_COLUMN, self._state_tip())
+            self._show_sort()
             self._table.clear()
             if not shown:
                 self._table.add_message("Ничего не найдено")
@@ -250,10 +249,22 @@ class MyKitScreen(QWidget):
         finally:
             self.setUpdatesEnabled(True)
 
-    def _state_tip(self) -> str:
-        if self._sort != SORT_STATE:
-            return TIP_SORT_BY_STATE
-        return TIP_PROBLEMS_FIRST if self._problems_first else TIP_OK_FIRST
+    def _show_sort(self) -> None:
+        """Подпись сортировки (фиолетовая) только рядом с выбранным столбцом."""
+        kind = sorting.kind_of(self._sort)
+        choice = sorting.choice_of(self._sort)
+        self._table.set_sort_caption(kind.column, choice.caption)
+        for other in sorting.SORT_KINDS:
+            if other.column is None:
+                continue
+            if other is kind:
+                tip = (
+                    f"Сортировка: {choice.label}. Нажмите, чтобы поменять: "
+                    f"{sorting.choice_of(sorting.toggled(self._sort)).label}"
+                )
+            else:
+                tip = f"Нажмите, чтобы отсортировать {other.label.lower()}"
+            self._table.set_header_tip(other.column, tip)
 
     @property
     def table(self) -> DataTable:
