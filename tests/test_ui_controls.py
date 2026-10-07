@@ -5,7 +5,7 @@ from typing import List
 
 from pharmacy.ui.widgets.controls import Checkbox, Pagination, Segmented, Toggle
 from pharmacy.ui.widgets.field import TextField
-from pharmacy.ui.widgets.popup import PopupList
+from pharmacy.ui.widgets.popup import SHADOW_PAD, PopupList
 from pharmacy.ui.widgets.select import Select
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
 from tests.test_ui_widgets import WidgetTestCase
@@ -100,9 +100,53 @@ class SelectTest(WidgetTestCase):
         select = self.make()
         click(select._canvas, 40, 16)
         self.settle()
-        select._popup.event_generate("<Escape>")
+        select._popup._canvas.focus_force()
+        select._popup._canvas.event_generate("<Escape>")
         self.settle()
         self.assertIsNone(select._popup)
+
+    def test_popup_is_a_widget_inside_the_window_not_a_separate_window(self):
+        select = self.make()
+        click(select._canvas, 40, 16)
+        self.settle()
+        popup = select._popup
+        self.assertNotIsInstance(popup, tk.Toplevel)
+        self.assertIs(popup.master, select.winfo_toplevel())
+        self.assertEqual(popup.winfo_manager(), "place")
+        select._popup.close()
+
+    def test_popup_closes_when_the_window_is_resized(self):
+        select = self.make()
+        click(select._canvas, 40, 16)
+        self.settle()
+        self.root.geometry("520x420+0+0")
+        self.settle()
+        self.assertIsNone(select._popup)
+
+    def test_clicking_inside_the_popup_does_not_close_it_as_outside(self):
+        select = self.make()
+        click(select._canvas, 40, 16)
+        self.settle()
+        popup = select._popup
+        popup._on_outside_press(type("E", (), {"widget": popup._canvas})())
+        self.assertIsNotNone(select._popup)
+        select._popup.close()
+
+    def test_popup_opens_above_the_field_when_there_is_no_room_below(self):
+        select = self.make()
+        select.place(x=10, y=self.root.winfo_height() - 40)
+        self.settle()
+        click(select._canvas, 40, 16)
+        self.settle()
+        popup = select._popup
+        field = popup._anchor
+        self.assertLess(popup.winfo_rooty(), field.winfo_rooty())
+        # Низ списка (без поля под тень) упирается в верх поля, а не заходит на него.
+        self.assertEqual(
+            popup.winfo_rooty() + popup.winfo_height() - SHADOW_PAD,
+            field.winfo_rooty(),
+        )
+        select._popup.close()
 
     def test_error_is_cleared_after_pick(self):
         select = self.make()

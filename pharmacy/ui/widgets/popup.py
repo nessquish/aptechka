@@ -21,11 +21,14 @@ LIST_RADIUS = 8
 TOP_PAD = 2  # отступ списка от нижнего края поля (само поле уже имеет поле под тень)
 
 
-class PopupList(tk.Toplevel):
-    """Список вариантов в отдельном окне без рамки.
+class PopupList(tk.Frame):
+    """Список вариантов поверх содержимого окна приложения.
 
-    Закрывается по выбору варианта, по Esc и по нажатию вне списка.
-    Длинный список прокручивается колёсиком мыши.
+    Это не отдельное окно, а обычный виджет внутри главного окна: он двигается,
+    сворачивается и закрывается вместе с ним и не остаётся поверх других
+    программ. Закрывается по выбору варианта, по Esc, по нажатию вне списка и
+    при изменении размера окна. Длинный список прокручивается колёсиком мыши.
+    Если снизу не хватает места, открывается над полем.
     """
 
     def __init__(
@@ -45,8 +48,8 @@ class PopupList(tk.Toplevel):
             on_pick: Вызывается со значением выбранного варианта.
             on_close: Вызывается при закрытии списка.
         """
-        super().__init__(anchor)
-        self.overrideredirect(True)
+        self._toplevel = anchor.winfo_toplevel()
+        super().__init__(self._toplevel, bd=0, highlightthickness=0)
         self._choices = list(options)
         self._selected = selected
         self._on_pick = on_pick
@@ -69,10 +72,12 @@ class PopupList(tk.Toplevel):
         total_width = self._inner_width + 2 * SHADOW_PAD
         total_height = self._inner_height + TOP_PAD + SHADOW_PAD
         left = anchor.winfo_rootx() - SHADOW_PAD
-        # Окно начинается сразу под полем и не заходит на него: так снимок фона под
-        # списком не содержит рамки поля, даже если она только что перерисована.
+        # Список начинается сразу под полем и не заходит на него: так снимок фона
+        # под списком не содержит рамки поля, даже если она только что перерисована.
         top = anchor.winfo_rooty() + anchor.winfo_height()
-        self.geometry(f"{total_width}x{total_height}+{left}+{top}")
+        window_bottom = self._toplevel.winfo_rooty() + self._toplevel.winfo_height()
+        if top + total_height > window_bottom and anchor.winfo_rooty() > total_height:
+            top = anchor.winfo_rooty() - total_height + SHADOW_PAD  # над полем
         self._canvas = tk.Canvas(
             self,
             width=total_width,
@@ -82,33 +87,54 @@ class PopupList(tk.Toplevel):
             bg=palette().bg,
         )
         self._canvas.pack()
+        # Фон снимается до того, как список появится, и тень ложится на него.
         self._backdrop = self._grab(left, top, total_width, total_height)
         self._draw()
+        self.place(
+            x=left - self._toplevel.winfo_rootx(),
+            y=top - self._toplevel.winfo_rooty(),
+            width=total_width,
+            height=total_height,
+        )
+        self.lift()
 
         self._canvas.bind("<Motion>", self._on_motion)
         self._canvas.bind("<ButtonRelease-1>", self._on_click)
         self._canvas.bind("<MouseWheel>", self._on_wheel)
-        self.bind("<Escape>", lambda _event: self.close())
         # Мышь не захватывается: клик в любом другом месте окна закрывает список
         # и сразу доходит до того, на что нажали (например, до другого фильтра).
         self._anchor = anchor
-        self._toplevel = anchor.winfo_toplevel()
-        self._outside_id = self._toplevel.bind(
-            "<ButtonPress-1>", self._on_outside_press, add="+"
-        )
-        self.focus_force()
+        self._bindings = [
+            (sequence, self._toplevel.bind(sequence, handler, add="+"))
+            for sequence, handler in (
+                ("<ButtonPress-1>", self._on_outside_press),
+                ("<Escape>", lambda _event: self.close()),
+                ("<Configure>", self._on_window_resize),
+            )
+        ]
+        self._canvas.focus_set()
+
+    def _on_window_resize(self, event: tk.Event) -> None:
+        """Закрывает список, если изменился размер окна (поле сдвинулось)."""
+        if event.widget is self._toplevel:
+            self.close()
 
     def _on_outside_press(self, event: tk.Event) -> None:
         """Закрывает список при нажатии вне его (кроме поля, которое его открыло)."""
         widget = event.widget
-        if isinstance(widget, tk.Misc) and self._belongs_to_anchor(widget):
+        if not isinstance(widget, tk.Misc):
+            return
+        if self._belongs_to(widget, self):
+            return  # нажатие внутри списка обработает сам список
+        if self._belongs_to(widget, self._anchor):
             return  # поле само решит: закрыть список или открыть заново
         self.close()
 
-    def _belongs_to_anchor(self, widget: tk.Misc) -> bool:
-        path = str(widget)
-        anchor = str(self._anchor)
-        return path == anchor or path.startswith(anchor + ".")
+    @staticmethod
+    def _belongs_to(widget: tk.Misc, owner: tk.Misc) -> bool:
+        """Сам ли это виджет `owner` или вложенный в него."""
+        path, root = str(widget), str(owner)
+        return path == root or path.startswith(root + ".")
 
     @staticmethod
     def _grab(left: int, top: int, width: int, height: int) -> Optional[Image.Image]:
@@ -210,7 +236,8 @@ class PopupList(tk.Toplevel):
         if self._closed:
             return
         self._closed = True
-        self._toplevel.unbind("<ButtonPress-1>", self._outside_id)
+        for sequence, binding_id in self._bindings:
+            self._toplevel.unbind(sequence, binding_id)
         self.destroy()
         if self._on_close is not None:
             self._on_close()
