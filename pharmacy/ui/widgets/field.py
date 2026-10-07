@@ -219,6 +219,60 @@ class _IconSlot(QWidget):
         painter.drawPixmap(0, 0, icon_pixmap(self._name, ICON_SIZE, palette().ink_3))
 
 
+MENU_RADIUS = 8
+
+
+def menu_style() -> str:
+    """Оформление всплывающего меню под цвета выбранной темы."""
+    pal = palette()
+    return (
+        f"QMenu {{ background: {pal.card}; border: 1px solid {pal.line};"
+        f" border-radius: {MENU_RADIUS}px; padding: 4px; }}"
+        f"QMenu::item {{ color: {pal.ink}; padding: 6px 22px 6px 12px;"
+        " border-radius: 6px; }"
+        f"QMenu::item:selected {{ background: {pal.primary_soft};"
+        f" color: {pal.primary_ink}; }}"
+        f"QMenu::item:disabled {{ color: {pal.ink_3}; }}"
+        f"QMenu::separator {{ height: 1px; background: {pal.line_soft};"
+        " margin: 4px 8px; }"
+    )
+
+
+def build_edit_menu(owner: QWidget, entries) -> QMenu:
+    """Собирает меню «Вырезать, Копировать, Вставить» в цветах темы приложения.
+
+    Меню светлое в светлой теме и тёмное в тёмной, а не по настройкам системы.
+
+    Args:
+        owner: Поле, для которого открыто меню.
+        entries: Пункты: (подпись, действие, доступен ли) или None для черты.
+    """
+    menu = QMenu(owner)
+    menu.setWindowFlags(
+        menu.windowFlags()
+        | Qt.WindowType.FramelessWindowHint
+        | Qt.WindowType.NoDropShadowWindowHint
+    )
+    menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    menu.setFont(font("body"))
+    menu.setStyleSheet(menu_style())
+    for entry in entries:
+        if entry is None:
+            menu.addSeparator()
+            continue
+        title, action, enabled = entry
+        item = QAction(title, menu)
+        item.setEnabled(enabled)
+        item.triggered.connect(action)
+        menu.addAction(item)
+    return menu
+
+
+def show_edit_menu(owner: QWidget, position, entries) -> None:
+    """Показывает меню правой кнопки мыши в точке ``position``."""
+    build_edit_menu(owner, entries).exec(position)
+
+
 class _Edit(QLineEdit):
     """Однострочный ввод без рамки. Скрытый текст можно копировать как есть."""
 
@@ -261,24 +315,19 @@ class _Edit(QLineEdit):
         self.focus_changed.emit(False)
 
     def contextMenuEvent(self, event) -> None:
-        menu = QMenu(self)
         editable = not self.isReadOnly()
-        entries = (
-            ("Вырезать", self._cut, editable and self.hasSelectedText()),
-            ("Копировать", self._copy_real_text, self.hasSelectedText()),
-            ("Вставить", self.paste, editable),
-            (None, None, True),
-            ("Выделить всё", self.selectAll, True),
+        selected = self.hasSelectedText()
+        show_edit_menu(
+            self,
+            event.globalPos(),
+            (
+                ("Вырезать", self._cut, editable and selected),
+                ("Копировать", self._copy_real_text, selected),
+                ("Вставить", self.paste, editable),
+                None,
+                ("Выделить всё", self.selectAll, True),
+            ),
         )
-        for title, action, enabled in entries:
-            if title is None:
-                menu.addSeparator()
-                continue
-            item = QAction(title, menu)
-            item.setEnabled(enabled)
-            item.triggered.connect(action)
-            menu.addAction(item)
-        menu.exec(event.globalPos())
 
     def _cut(self) -> None:
         self._copy_real_text()
@@ -289,6 +338,21 @@ class _Area(QPlainTextEdit):
     """Многострочный ввод без рамки."""
 
     focus_changed = Signal(bool)
+
+    def contextMenuEvent(self, event) -> None:
+        editable = not self.isReadOnly()
+        selected = self.textCursor().hasSelection()
+        show_edit_menu(
+            self,
+            event.globalPos(),
+            (
+                ("Вырезать", self.cut, editable and selected),
+                ("Копировать", self.copy, selected),
+                ("Вставить", self.paste, editable),
+                None,
+                ("Выделить всё", self.selectAll, True),
+            ),
+        )
 
     def focusInEvent(self, event) -> None:
         super().focusInEvent(event)
@@ -397,7 +461,9 @@ class TextField(LabeledBox):
         self._entry.setStyleSheet(
             "background: transparent; border: none; padding: 0; "
             f"selection-background-color: {pal.primary_soft}; "
-            f"selection-color: {pal.ink};"
+            f"selection-color: {pal.ink}; "
+            # Точки пароля те же, что были в макете: маленькая «•», а не крупный круг.
+            f"lineedit-password-character: {ord(MASK_CHAR)};"
         )
         recolor(self._entry, "ink_3" if self._readonly else "ink")
         colors = self._entry.palette()

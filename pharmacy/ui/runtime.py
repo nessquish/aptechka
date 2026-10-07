@@ -26,6 +26,9 @@ def application() -> QApplication:
 
 def _setup(app: QApplication) -> None:
     app.setStyle("Fusion")
+    # Цвета рисуем сами по теме приложения, а настройка тёмного режима Windows
+    # не должна красить стандартные части (меню, подсказки).
+    app.styleHints().setColorScheme(Qt.ColorScheme.Light)
     QLocale.setDefault(QLocale(QLocale.Language.Russian))
     for name in ("qtbase", "qt"):
         translator = QTranslator(app)

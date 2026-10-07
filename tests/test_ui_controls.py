@@ -11,7 +11,13 @@ from pharmacy.ui import theme
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.common import label
 from pharmacy.ui.widgets.controls import Checkbox, Pagination, Segmented, Toggle
-from pharmacy.ui.widgets.field import ICON_INSET, ICON_SIZE, TextField
+from pharmacy.ui.widgets.field import (
+    ICON_INSET,
+    ICON_SIZE,
+    TextField,
+    build_edit_menu,
+    menu_style,
+)
 from pharmacy.ui.widgets.popup import MAX_VISIBLE, SHADOW_PAD, PopupList
 from pharmacy.ui.widgets.select import Select
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
@@ -406,6 +412,46 @@ class TextFieldExtrasTest(Holder):
         self.assertIsNotNone(field._trailing)
         self.assertEqual(field._trailing.width(), ICON_SIZE)
         self.assertGreater(ICON_INSET, 0)
+
+
+class FieldLookTest(Holder):
+    def test_password_dots_are_the_small_bullet(self):
+        field = self.add(TextField("Пароль", password=True))
+        self.assertIn(
+            f"lineedit-password-character: {ord('•')}", field.entry.styleSheet()
+        )
+
+    def test_context_menu_follows_the_app_theme_not_the_system(self):
+        for name, expected in (("light", theme.LIGHT.card), ("dark", theme.DARK.card)):
+            theme.set_theme(name)
+            self.assertIn(f"background: {expected}", menu_style())
+
+    def test_context_menu_has_the_russian_items(self):
+        field = self.add(TextField("Логин"))
+        menu = build_edit_menu(
+            field.entry,
+            (
+                ("Вырезать", lambda: None, True),
+                None,
+                ("Выделить всё", lambda: None, False),
+            ),
+        )
+        titles = [
+            action.text() for action in menu.actions() if not action.isSeparator()
+        ]
+        self.assertEqual(titles, ["Вырезать", "Выделить всё"])
+        self.assertFalse(menu.actions()[-1].isEnabled())
+
+    def test_light_scheme_is_forced_so_windows_dark_mode_does_not_leak(self):
+        from unittest import mock
+
+        from PySide6.QtWidgets import QApplication
+
+        from pharmacy.ui import runtime
+
+        with mock.patch.object(QApplication.styleHints(), "setColorScheme") as setter:
+            runtime._setup(QApplication.instance())
+        setter.assert_called_once_with(Qt.ColorScheme.Light)
 
 
 class SegmentedTest(Holder):
