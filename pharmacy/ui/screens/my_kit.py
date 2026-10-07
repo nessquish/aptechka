@@ -96,8 +96,8 @@ class MyKitScreen(QWidget):
                 "В аптечке пока пусто",
                 "Добавьте первое лекарство или бытовое средство,\n"
                 "чтобы следить за сроками годности и остатками",
-                "Добавить товар",
-                self._shell.open_product_form,
+                "Добавить товар в аптечку",
+                self._shell.add_product,
             )
         )
         wrapper = QVBoxLayout()
@@ -114,8 +114,8 @@ class MyKitScreen(QWidget):
         )
         bar.setSpacing(8 - 2 * SHADOW_PAD)
         self.add_button = Button(
-            "Добавить товар",
-            command=self._shell.open_product_form,
+            "Добавить товар в аптечку",
+            command=self._shell.add_product,
             variant="primary",
             icon="plus",
         )

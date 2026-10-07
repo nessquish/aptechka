@@ -76,7 +76,7 @@ class ThemeSwitchTest(ShellTestCase):
         self.toggle()
         for name in sections.ALL:
             self.open(name)
-        self.shell.open_product_form()
+        self.shell.open_product_form(1)
         self.settle()
         self.shell.open_product(1)
         self.settle()

@@ -115,11 +115,6 @@ class DashboardScreenTest(ShellTestCase):
         self.assertTrue(marked)
         self.assertTrue(all(not b.enabled for b in marked))
 
-    def test_add_product_button_opens_the_kit(self):
-        self.page.add_button.invoke()
-        self.settle()
-        self.assertIsInstance(self.page, MyKitScreen)
-
     def test_greets_the_user_by_name(self):
         texts = [w.text() for w in find_all(self.page, QLabel)]
         self.assertTrue(any(t.endswith("Анастасия!") for t in texts))

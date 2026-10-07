@@ -92,8 +92,8 @@ class DashboardScreen(QWidget):
         text = f"{labels.greeting(datetime.now().hour)}, {self._user.username}!"
         header = PageHeader(text)
         self.add_button = Button(
-            "Добавить товар",
-            command=lambda: self._shell.navigate(sections.MY_KIT),
+            "Добавить товар в аптечку",
+            command=self._shell.add_product,
             variant="primary",
             icon="plus",
         )
