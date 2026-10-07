@@ -66,21 +66,6 @@ def frozen_window(widget: tk.Misc) -> Iterator[None]:
             _thaw(widget, handle)
 
 
-@contextmanager
-def not_frozen() -> Iterator[None]:
-    """Блок, внутри которого окно не замораживается.
-
-    Для построения экранов про запас: они не видны, поэтому замораживать и
-    перерисовывать окно ради них не нужно (это только затормозило бы его).
-    """
-    global _depth
-    _depth += 1
-    try:
-        yield
-    finally:
-        _depth -= 1
-
-
 def frozen(method: Callable[..., Any]) -> Callable[..., Any]:
     """Декоратор: метод виджета выполняется при замороженном окне.
 
@@ -94,20 +79,6 @@ def frozen(method: Callable[..., Any]) -> Callable[..., Any]:
             return method(self, *args, **kwargs)
 
     return wrapper
-
-
-def redraw_window(widget: tk.Misc) -> None:
-    """Перерисовывает окно целиком вместе со всеми дочерними виджетами.
-
-    Нужно после разворачивания из свёрнутого состояния: Windows иногда
-    возвращает часть виджетов (поля, подписи) нерисованными, и вместо текста
-    видны тёмные прямоугольники.
-    """
-    if sys.platform != "win32":
-        return
-    handle = _window_handle(widget)
-    if handle is not None:
-        _user32().RedrawWindow(handle, None, None, _REDRAW_FLAGS)
 
 
 def _thaw(widget: tk.Misc, handle: int) -> None:

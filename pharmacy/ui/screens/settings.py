@@ -309,7 +309,7 @@ class SettingsScreen(tk.Frame):
             field.focus_field()
 
     def _cancel(self) -> None:
-        self._shell.navigate(sections.SETTINGS, fresh=True)  # сбросить ввод
+        self._shell.navigate(sections.SETTINGS)
 
     # --- уведомление «сохранено» ---
 

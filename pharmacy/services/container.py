@@ -27,16 +27,6 @@ class Services:
     history: HistoryService
     settings: SettingsService
     dashboard: DashboardService
-    db: Database
-
-    @property
-    def data_version(self) -> int:
-        """Число, которое растёт при каждой записи в базу.
-
-        Интерфейс сравнивает его, чтобы понять, изменились ли данные с тех
-        пор, как экран был построен.
-        """
-        return self.db.changes
 
 
 def build_services(db: Database) -> Services:
@@ -57,5 +47,4 @@ def build_services(db: Database) -> Services:
         history=HistoryService(db),
         settings=SettingsService(db, notifications),
         dashboard=DashboardService(db),
-        db=db,
     )

@@ -129,36 +129,6 @@ class FreezeTest(WidgetTestCase):
         self.assertEqual(Screen.rebuild.__doc__, "Описание.")
 
 
-class RedrawAfterRestoreTest(WidgetTestCase):
-    def setUp(self):
-        super().setUp()
-        self.user32 = FakeUser32()
-        for patcher in (
-            mock.patch.object(freeze, "_user32", return_value=self.user32),
-            mock.patch.object(sys, "platform", "win32"),
-        ):
-            patcher.start()
-            self.addCleanup(patcher.stop)
-
-    def test_redraw_window_repaints_everything(self):
-        freeze.redraw_window(self.root)
-        self.assertEqual([c[0] for c in self.user32.calls], ["redraw"])
-        self.assertEqual(self.user32.calls[0][2], freeze._REDRAW_FLAGS)
-
-    def test_redraw_of_a_closed_window_is_safe(self):
-        window = tk.Tk()
-        window.destroy()
-        freeze.redraw_window(window)
-        self.assertEqual(self.user32.calls, [])
-
-    def test_not_frozen_block_blocks_locking_and_restores_depth(self):
-        with freeze.not_frozen():
-            with frozen_window(self.root):
-                pass
-        self.assertEqual(self.user32.calls, [])
-        self.assertEqual(freeze._depth, 0)
-
-
 class OtherSystemTest(WidgetTestCase):
     def test_does_nothing_outside_windows(self):
         user32 = FakeUser32()
@@ -186,22 +156,6 @@ class InTheAppTest(ShellTestCase):
 
     def locks(self):
         return [c for c in self.user32.calls if c[0] == "lock" and c[1] != 0]
-
-    def redraws(self):
-        return [c for c in self.user32.calls if c[0] == "redraw"]
-
-    def test_window_is_redrawn_when_it_is_shown_again(self):
-        before = len(self.redraws())
-        self.app.event_generate("<Map>")  # так окно сообщает о разворачивании
-        self.settle()
-        self.assertGreater(len(self.redraws()), before)
-
-    def test_mapping_of_a_child_does_not_redraw_the_window(self):
-        before = len(self.redraws())
-        event = mock.Mock(widget=self.shell)
-        self.app._on_map(event)
-        self.settle()
-        self.assertEqual(len(self.redraws()), before)
 
     def test_every_section_change_freezes_the_window_once(self):
         for name in sections.ALL:
