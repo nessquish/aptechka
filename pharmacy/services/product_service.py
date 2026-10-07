@@ -14,6 +14,7 @@ from pharmacy.repositories.product_repository import ProductRepository
 from pharmacy.repositories.user_repository import UserRepository
 from pharmacy.services.notification_service import NotificationService
 from pharmacy.services.status import (
+    STATUS_PRIORITY,
     ProductStatus,
     primary_status,
     product_statuses,
@@ -155,6 +156,42 @@ def _describe_changes(old: Product, new: ProductData) -> str:
     if other:
         parts.append("изменено: " + ", ".join(other))
     return "; ".join(parts)
+
+
+SORT_STATUS = "status"  # сначала просроченные, ниже остальные, в конце норма
+SORT_STATUS_OK = "status_ok"  # сначала норма, в конце просроченные
+
+
+def sort_by_status(
+    views: List[ProductView], problems_first: bool = True
+) -> List[ProductView]:
+    """Сортирует товары по состоянию, а внутри группы по сроку годности.
+
+    Ключ сортировки это пара «номер состояния, срок годности». Направление
+    меняется только у номера состояния: внутри группы самые старые сроки
+    всегда сверху, а товары без срока в конце группы.
+
+    Args:
+        views: Товары (уже упорядочены по сроку годности).
+        problems_first: True: просроченные сверху, норма снизу; False: наоборот.
+
+    Returns:
+        Новый список в нужном порядке.
+    """
+    rank = {status: number for number, status in enumerate(STATUS_PRIORITY)}
+    last = len(STATUS_PRIORITY) - 1
+
+    def key(view: ProductView) -> tuple:
+        number = rank[view.primary_status]
+        expiry = view.product.expiry_date
+        return (
+            number if problems_first else last - number,
+            expiry is None,
+            expiry or date.max,
+            view.product.name.casefold(),
+        )
+
+    return sorted(views, key=key)
 
 
 class ProductService:
@@ -306,21 +343,27 @@ class ProductService:
             search: Часть названия (регистр не важен).
             category_id: Показать только эту категорию.
             status: Показать только товары в этом состоянии.
-            sort: Сортировка: ``name``, ``expiry``, ``quantity`` или ``added``.
+            sort: Сортировка: ``name``, ``expiry``, ``quantity``, ``added`` или
+                по состоянию: ``status`` (сначала просроченные) и ``status_ok``
+                (сначала норма). Внутри одной группы товары идут по сроку
+                годности: самые старые сверху.
             today: Сегодняшняя дата (по умолчанию из системы).
 
         Returns:
             Список товаров с состояниями.
         """
         warning_days = self._warning_days(user_id)
+        by_status = sort in (SORT_STATUS, SORT_STATUS_OK)
         views = [
             self._view(product, warning_days, today)
             for product in self._products.list_for_user(
-                user_id, search, category_id, sort
+                user_id, search, category_id, "expiry" if by_status else sort
             )
         ]
         if status is not None:
             views = [view for view in views if status in view.statuses]
+        if by_status:
+            views = sort_by_status(views, problems_first=sort == SORT_STATUS)
         return views
 
     def _view(

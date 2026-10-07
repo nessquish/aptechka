@@ -6,7 +6,13 @@ from unittest import mock
 from pharmacy.errors import NotFoundError, ValidationError
 from pharmacy.models import HistoryAction
 from pharmacy.repositories.history_repository import HistoryRepository
-from pharmacy.services.product_service import ProductForm, ProductService
+from pharmacy.services.product_service import (
+    SORT_STATUS,
+    SORT_STATUS_OK,
+    ProductForm,
+    ProductService,
+    sort_by_status,
+)
 from pharmacy.services.status import ProductStatus
 from pharmacy.utils.units import UNITS
 from tests.helpers import DatabaseTestCase
@@ -287,6 +293,117 @@ class OwnershipTest(ProductServiceTestCase):
 
     def test_other_user_sees_empty_list(self):
         self.assertEqual(self.service.list_products(self.other_id), [])
+
+
+class StatusSortTest(ProductServiceTestCase):
+    """Сортировка по состоянию: два направления, внутри группы по сроку годности."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.add(name="Просрочен давно", expiry_date="01.08.2026", quantity="5")
+        self.add(name="Просрочен недавно", expiry_date="01.09.2026", quantity="5")
+        self.add(name="Скоро", expiry_date="10.10.2026", quantity="5")
+        self.add(name="Мало", expiry_date="", quantity="1", min_quantity="2")
+        self.add(name="Норма 2028", expiry_date="01.01.2028", quantity="9")
+        self.add(name="Норма 2027", expiry_date="01.06.2027", quantity="9")
+        self.add(name="Норма без срока", expiry_date="", quantity="9")
+
+    def names(self, sort, **kwargs):
+        views = self.service.list_products(
+            self.user_id, sort=sort, today=TODAY, **kwargs
+        )
+        return [view.product.name for view in views]
+
+    def test_expired_first(self):
+        self.assertEqual(
+            self.names(SORT_STATUS),
+            [
+                "Просрочен давно",
+                "Просрочен недавно",
+                "Скоро",
+                "Мало",
+                "Норма 2027",
+                "Норма 2028",
+                "Норма без срока",
+            ],
+        )
+
+    def test_normal_first(self):
+        self.assertEqual(
+            self.names(SORT_STATUS_OK),
+            [
+                "Норма 2027",
+                "Норма 2028",
+                "Норма без срока",
+                "Мало",
+                "Скоро",
+                "Просрочен давно",
+                "Просрочен недавно",
+            ],
+        )
+
+    def test_inside_a_group_the_oldest_expiry_is_always_on_top(self):
+        for sort in (SORT_STATUS, SORT_STATUS_OK):
+            names = self.names(sort)
+            self.assertLess(
+                names.index("Просрочен давно"), names.index("Просрочен недавно")
+            )
+            self.assertLess(names.index("Норма 2027"), names.index("Норма 2028"))
+            self.assertLess(names.index("Норма 2028"), names.index("Норма без срока"))
+
+    def test_the_two_directions_swap_the_groups_only(self):
+        first = self.names(SORT_STATUS)
+        second = self.names(SORT_STATUS_OK)
+        self.assertNotEqual(first, second)
+        self.assertEqual(sorted(first), sorted(second))
+        self.assertEqual(first[0], "Просрочен давно")
+        self.assertEqual(second[-1], "Просрочен недавно")
+
+    def test_works_together_with_filters_and_search(self):
+        self.assertEqual(
+            self.names(SORT_STATUS, search="норма"),
+            ["Норма 2027", "Норма 2028", "Норма без срока"],
+        )
+        self.assertEqual(
+            self.names(SORT_STATUS_OK, status=ProductStatus.EXPIRED),
+            ["Просрочен давно", "Просрочен недавно"],
+        )
+
+    def test_statuses_are_recalculated_for_the_given_day(self):
+        later = date(2027, 7, 1)
+        views = self.service.list_products(self.user_id, sort=SORT_STATUS, today=later)
+        names = [view.product.name for view in views]
+        self.assertEqual(
+            names[:4],
+            [
+                "Просрочен давно",
+                "Просрочен недавно",
+                "Скоро",
+                "Норма 2027",
+            ],
+        )
+
+    def test_user_warning_period_changes_the_groups(self):
+        self.db.execute(
+            "UPDATE users SET warning_days = 3 WHERE id = ?", (self.user_id,)
+        )
+        names = self.names(SORT_STATUS)
+        self.assertLess(
+            names.index("Мало"), names.index("Скоро")
+        )  # «Скоро» теперь норма
+
+    def test_helper_does_not_change_the_source_list(self):
+        views = self.service.list_products(self.user_id, today=TODAY)
+        before = [v.product.id for v in views]
+        sort_by_status(views, problems_first=False)
+        self.assertEqual([v.product.id for v in views], before)
+
+    def test_empty_list(self):
+        self.assertEqual(sort_by_status([]), [])
+
+    def test_unknown_sort_is_still_rejected(self):
+        with self.assertRaises(ValueError):
+            self.names("status_up")
 
 
 class ListProductsTest(ProductServiceTestCase):

@@ -72,6 +72,7 @@ ICONS: Dict[str, Tuple[Primitive, ...]] = {
     "arrow-left": (_path("m12 19-7-7 7-7M19 12H5"),),
     "arrow-right": (_path("M5 12h14m-7-7 7 7-7 7"),),
     "arrow-down": (_path("M12 5v14m7-7-7 7-7-7"),),
+    "arrow-up": (_path("m5 12 7-7 7 7M12 19V5"),),
     "chevron-left": (_path("m15 18-6-6 6-6"),),
     "chevron-right": (_path("m9 18 6-6-6-6"),),
     "chevron-down": (_path("m6 9 6 6 6-6"),),

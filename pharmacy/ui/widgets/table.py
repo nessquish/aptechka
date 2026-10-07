@@ -110,6 +110,9 @@ class DataTable(QWidget):
         self._card = card
         self._columns = list(columns)
         self._sorted: Optional[int] = None
+        self._ascending = False
+        self._header_clicks: Dict[int, Callable[[], None]] = {}
+        self._header_tips: Dict[int, str] = {}
         self._rounded_top = True
         self._header_widgets: Dict[int, QWidget] = {}
         self._header_height = line_height("body_medium") + 2 * HEADER_PADDING_Y
@@ -160,16 +163,52 @@ class DataTable(QWidget):
         )
         if index == self._sorted:
             arrow = QLabel()
-            arrow.setPixmap(icon_pixmap("arrow-down", SORT_ICON, palette().primary))
+            name = "arrow-up" if self._ascending else "arrow-down"
+            arrow.setPixmap(icon_pixmap(name, SORT_ICON, palette().primary))
             layout.addSpacing(SORT_GAP)
             layout.addWidget(arrow, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addStretch(1)
+        if index in self._header_clicks:
+            clickable(cell, self._header_clicks[index])
+        if self._header_tips.get(index):
+            cell.setToolTip(self._header_tips[index])
         return cell
 
-    def set_sorted(self, index: Optional[int]) -> None:
-        """Показывает стрелку сортировки у столбца (None убирает стрелку)."""
+    def set_sorted(self, index: Optional[int], ascending: bool = False) -> None:
+        """Показывает стрелку сортировки у столбца (None убирает стрелку).
+
+        Args:
+            index: Номер столбца.
+            ascending: Стрелка вверх (по возрастанию) вместо стрелки вниз.
+        """
         self._sorted = index
+        self._ascending = ascending
         self._build_header()
+
+    def set_header_click(
+        self, index: int, command: Callable[[], None], tip: str = ""
+    ) -> None:
+        """Делает заголовок столбца нажимаемым (например, чтобы менять сортировку).
+
+        Args:
+            index: Номер столбца.
+            command: Что вызвать при нажатии на заголовок.
+            tip: Подсказка при наведении.
+        """
+        self._header_clicks[index] = command
+        self._header_tips[index] = tip
+        self._build_header()
+
+    def set_header_tip(self, index: int, tip: str) -> None:
+        """Меняет подсказку заголовка столбца."""
+        self._header_tips[index] = tip
+        if index < len(self._header_cells):
+            self._header_cells[index].setToolTip(tip)
+
+    @property
+    def ascending(self) -> bool:
+        """Показана ли стрелка вверх."""
+        return self._ascending
 
     def set_rounded_top(self, rounded: bool) -> None:
         """Красит шапку у верхнего края карточки.

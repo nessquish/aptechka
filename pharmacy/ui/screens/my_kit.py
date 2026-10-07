@@ -16,7 +16,7 @@ from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.page import ACTION_INSET, PageHeader
 from pharmacy.ui.widgets.select import Select
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
-from pharmacy.services.product_service import ProductView
+from pharmacy.services.product_service import SORT_STATUS_OK, ProductView
 from pharmacy.services.status import ProductStatus
 from pharmacy.ui import labels
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
@@ -27,15 +27,21 @@ if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
 
 PAGE_SIZE = 8
+SORT_STATE = "status"  # сортировка по состоянию; направление задаёт флаг
+STATE_COLUMN = 6  # столбец «Состояние»
 SEARCH_DELAY_MS = 250
 SORTS = (
     ("expiry", "срок годности"),
     ("name", "название"),
     ("quantity", "количество"),
     ("added", "дата добавления"),
+    (SORT_STATE, "по состоянию"),
 )
 # Какой столбец помечается стрелкой при каждой сортировке.
-SORT_COLUMN = {"name": 0, "quantity": 2, "expiry": 4}
+SORT_COLUMN = {"name": 0, "quantity": 2, "expiry": 4, SORT_STATE: STATE_COLUMN}
+TIP_PROBLEMS_FIRST = "Сначала просроченные. Нажмите, чтобы показать сначала норму"
+TIP_OK_FIRST = "Сначала норма. Нажмите, чтобы показать сначала просроченные"
+TIP_SORT_BY_STATE = "Нажмите, чтобы отсортировать по состоянию"
 COLUMNS = (
     Column("Название", 30),
     Column("Категория", 20),
@@ -70,6 +76,7 @@ class MyKitScreen(QWidget):
         self._category: Optional[int] = None
         self._status = status
         self._sort = SORTS[0][0]
+        self._problems_first = True  # при сортировке по состоянию: просроченные сверху
         self._page = 1
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -171,14 +178,42 @@ class MyKitScreen(QWidget):
 
     def _on_sort(self, value: object) -> None:
         self._sort = value
+        self._problems_first = True
         self._page = 1
         self._reload()
+
+    def _toggle_state_sort(self) -> None:
+        """Нажатие на заголовок «Состояние»: включает сортировку по состоянию, а
+        если она уже включена, меняет направление (просроченные или норма сверху).
+        """
+        if self._sort == SORT_STATE:
+            self._problems_first = not self._problems_first
+        else:
+            self._sort = SORT_STATE
+            self._problems_first = True
+            self.sort_select.set(SORT_STATE)
+        self._page = 1
+        self._reload()
+
+    def _sort_order(self) -> str:
+        """Вид сортировки для сервиса с учётом направления по состоянию."""
+        if self._sort == SORT_STATE and not self._problems_first:
+            return SORT_STATUS_OK
+        return self._sort
+
+    @property
+    def problems_first(self) -> bool:
+        """При сортировке по состоянию просроченные стоят сверху."""
+        return self._problems_first
 
     # --- таблица ---
 
     def _build_table(self) -> None:
         card = Card(flush=True)
         self._table = DataTable(COLUMNS, card)
+        self._table.set_header_click(
+            STATE_COLUMN, self._toggle_state_sort, TIP_SORT_BY_STATE
+        )
         card.body.addWidget(self._table)
         self._footer = QVBoxLayout()
         self._footer.setContentsMargins(0, 0, 0, 0)
@@ -193,7 +228,7 @@ class MyKitScreen(QWidget):
             search=self._search,
             category_id=self._category,
             status=self._status,
-            sort=self._sort,
+            sort=self._sort_order(),
         )
         pages = max(math.ceil(len(views) / PAGE_SIZE), 1)
         self._page = min(self._page, pages)
@@ -201,7 +236,11 @@ class MyKitScreen(QWidget):
         shown = views[start : start + PAGE_SIZE]
         self.setUpdatesEnabled(False)
         try:
-            self._table.set_sorted(SORT_COLUMN.get(self._sort))
+            self._table.set_sorted(
+                SORT_COLUMN.get(self._sort),
+                ascending=self._sort == SORT_STATE and not self._problems_first,
+            )
+            self._table.set_header_tip(STATE_COLUMN, self._state_tip())
             self._table.clear()
             if not shown:
                 self._table.add_message("Ничего не найдено")
@@ -210,6 +249,11 @@ class MyKitScreen(QWidget):
             self._build_footer(len(views), start, len(shown), pages)
         finally:
             self.setUpdatesEnabled(True)
+
+    def _state_tip(self) -> str:
+        if self._sort != SORT_STATE:
+            return TIP_SORT_BY_STATE
+        return TIP_PROBLEMS_FIRST if self._problems_first else TIP_OK_FIRST
 
     @property
     def table(self) -> DataTable:

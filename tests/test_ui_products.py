@@ -93,6 +93,109 @@ class MyKitTest(KitTestCase):
         self.kit._on_sort("added")
         self.assertIsNone(self.kit.table.sorted_column)
 
+    # --- сортировка по состоянию ---
+
+    def state_texts(self):
+        return [row[6] for row in self.kit.table.row_texts]
+
+    def test_sort_list_has_the_state_item(self):
+        labels = [text for _value, text in self.kit.sort_select.choices]
+        self.assertIn("по состоянию", labels)
+
+    def test_picking_state_puts_expired_on_top(self):
+        self.kit.sort_select._pick("status")
+        states = self.state_texts()
+        self.assertEqual(states[0], "Просрочен")
+        order = ["Просрочен", "Скоро истекает", "Низкий остаток", "Норма"]
+        ranks = [order.index(s) for s in states]
+        self.assertEqual(ranks, sorted(ranks))
+        self.assertTrue(self.kit.problems_first)
+        self.assertEqual(self.kit.table.sorted_column, 6)
+        self.assertFalse(self.kit.table.ascending)
+
+    def test_header_click_switches_to_normal_first_without_any_window(self):
+        self.kit.sort_select._pick("status")
+        windows_before = len(self.app.findChildren(type(self.app.centralWidget())))
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.assertFalse(self.kit.problems_first)
+        states = self.state_texts()
+        order = ["Норма", "Низкий остаток", "Скоро истекает", "Просрочен"]
+        ranks = [order.index(s) for s in states]
+        self.assertEqual(ranks, sorted(ranks))
+        self.assertTrue(self.kit.table.ascending)  # стрелка вверх
+        self.assertEqual(
+            len(self.app.findChildren(type(self.app.centralWidget()))), windows_before
+        )
+
+    def test_header_click_toggles_back_and_forth(self):
+        self.kit.sort_select._pick("status")
+        header = self.kit.table._header_cells[6]
+        click(header)
+        self.settle()
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.assertTrue(self.kit.problems_first)
+        self.assertEqual(self.state_texts()[0], "Просрочен")
+
+    def test_header_click_without_state_sort_turns_it_on(self):
+        self.assertEqual(self.kit.sort_select.get(), "expiry")
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.assertEqual(self.kit.sort_select.get(), "status")
+        self.assertTrue(self.kit.problems_first)
+        self.assertEqual(self.state_texts()[0], "Просрочен")
+
+    def test_header_has_a_hand_cursor_and_a_tip_for_each_direction(self):
+        header = self.kit.table._header_cells[6]
+        self.assertEqual(header.cursor().shape(), Qt.CursorShape.PointingHandCursor)
+        self.assertIn("отсортировать по состоянию", header.toolTip())
+        self.kit.sort_select._pick("status")
+        self.assertIn("Сначала просроченные", self.kit.table._header_cells[6].toolTip())
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.assertIn("Сначала норма", self.kit.table._header_cells[6].toolTip())
+
+    def test_other_headers_are_not_clickable(self):
+        self.assertNotEqual(
+            self.kit.table._header_cells[0].cursor().shape(),
+            Qt.CursorShape.PointingHandCursor,
+        )
+
+    def test_choosing_another_sort_resets_the_direction(self):
+        self.kit.sort_select._pick("status")
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.assertFalse(self.kit.problems_first)
+        self.kit.sort_select._pick("name")
+        self.kit.sort_select._pick("status")
+        self.assertTrue(self.kit.problems_first)
+
+    def test_inside_a_group_the_oldest_expiry_comes_first(self):
+        self.kit.sort_select._pick("status")
+        rows = self.kit.table.row_texts
+        normal = [row[4] for row in rows if row[6] == "Норма"]
+        dates = [d for d in normal if d != "—"]
+        parsed = [tuple(reversed(d.split("."))) for d in dates]
+        self.assertEqual(parsed, sorted(parsed))
+
+    def test_direction_survives_search_and_page_change(self):
+        self.kit.sort_select._pick("status")
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.kit._search_field.set("а")
+        self.kit._apply_search()
+        self.assertFalse(self.kit.problems_first)
+        self.assertEqual(self.kit.table.sorted_column, 6)
+
+    def test_page_resets_when_the_direction_changes(self):
+        seed_bulk(self.db, self.app.user.id, count=20)
+        self.open(sections.MY_KIT)
+        self.kit._on_page(3)
+        click(self.kit.table._header_cells[6])
+        self.settle()
+        self.assertEqual(self.kit._page, 1)
+
     def test_pagination(self):
         seed_bulk(self.db, self.app.user.id, count=20)
         self.open(sections.MY_KIT)
