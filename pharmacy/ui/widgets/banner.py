@@ -27,7 +27,7 @@ class ErrorBanner(QWidget):
         """
         super().__init__(parent)
         self._gap = gap_below
-        self._label = label("", "small", "red", wrap=True)
+        self._label = label("", "small", "red", wrap=True, bare=True)
         layout = QVBoxLayout(self)
         # Края плашки совпадают с краями полей: у тех по бокам поле под тень.
         layout.setContentsMargins(

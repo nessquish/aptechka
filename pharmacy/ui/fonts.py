@@ -82,5 +82,8 @@ def text_width(text: str, style: str) -> int:
 
 
 def line_height(style: str) -> int:
-    """Возвращает высоту строки текста в пикселях в заданном стиле."""
-    return QFontMetrics(font(style)).height()
+    """Возвращает высоту строки текста в пикселях в заданном стиле.
+
+    Берётся из таблицы макета, чтобы вертикальные отступы везде были те же.
+    """
+    return theme.line_height(style)

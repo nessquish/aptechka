@@ -12,7 +12,7 @@ from pharmacy.ui.icons import icon_pixmap
 from pharmacy.ui.widgets.banner import ErrorBanner
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import label
+from pharmacy.ui.widgets.common import label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui import theme
@@ -47,10 +47,10 @@ class _HeroPanel(QWidget):
         icon.setPixmap(icon_pixmap("cross", HERO_ICON_SIZE, pal.primary))
         layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addSpacing(18)
-        title = label("Моя аптечка", "display", "brand_ink")
+        title = label("Моя аптечка", "display", "brand_ink", bare=True)
         layout.addWidget(title, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addSpacing(8)
-        text = label(description, "lead", "ink_2", wrap=True)
+        text = label(description, "lead", "ink_2", wrap=True, bare=True)
         text.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         text.setFixedWidth(HERO_TEXT_WIDTH)
         text.setMinimumHeight(text.heightForWidth(HERO_TEXT_WIDTH))
@@ -75,7 +75,7 @@ class _HeroPanel(QWidget):
             mark.setPixmap(check)
             mark.setFixedSize(CHECK_SIZE, CHECK_SIZE)
             row.addWidget(mark)
-            row.addWidget(label(point, "body", "ink_2"))
+            row.addWidget(label(point, "body", "ink_2", bare=True))
             row.addStretch(1)
             column.addLayout(row)
         return host
@@ -145,7 +145,7 @@ class _AuthScreen(QWidget):
     def _header(self, text: str, style: str, color: str, gap_below: int) -> None:
         """Добавляет строку заголовка формы."""
         title = label(text, style, color)
-        title.setContentsMargins(SHADOW_PAD, 0, SHADOW_PAD, 0)
+        pad(title, SHADOW_PAD, 0, SHADOW_PAD, 0)
         self._form.addWidget(title)
         self._form.addSpacing(gap_below)
 

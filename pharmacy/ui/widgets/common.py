@@ -6,13 +6,33 @@ from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPalette
 from PySide6.QtWidgets import QLabel, QLayout, QSizePolicy, QWidget
 
-from pharmacy.ui.fonts import font
+from pharmacy.ui.fonts import font, line_height
 from pharmacy.ui.theme import palette
 
 
 def role_color(role: str) -> str:
     """Цвет по роли палитры (``ink``, ``primary`` ...) или сам цвет ``#RRGGBB``."""
     return role if role.startswith("#") else getattr(palette(), role)
+
+
+LABEL_BORDER = 2  # у подписи прежнего интерфейса была рамка в 2 пикселя
+LABEL_PAD = 1  # и вертикальный отступ в 1 пиксель, если его не обнулили
+
+
+def pad(
+    widget: QLabel, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0
+) -> None:
+    """Задаёт внешние отступы подписи поверх её собственных (рамка и отступ).
+
+    Интервалы между подписями в макете отсчитываются от краёв рамки подписи, а
+    не от самого текста, поэтому собственные отступы нужно сохранять.
+    """
+    inner = widget.property("inner_pad")
+    side = widget.property("side_pad")
+    widget.setContentsMargins(left + side, top + inner, right + side, bottom + inner)
+    line = widget.property("line_height")
+    if line:  # однострочная подпись: высота как в макете
+        widget.setFixedHeight(line + top + bottom + 2 * inner)
 
 
 def label(
@@ -22,8 +42,13 @@ def label(
     parent: Optional[QWidget] = None,
     wrap: bool = False,
     strike: bool = False,
+    tight: bool = False,
+    bare: bool = False,
 ) -> QLabel:
     """Создаёт подпись: текст в стиле макета нужного цвета.
+
+    У подписи те же собственные отступы, что и в макете: рамка 2 пикселя и
+    вертикальный отступ 1 пиксель (у «тесных» подписей отступа нет).
 
     Args:
         text: Текст.
@@ -32,8 +57,17 @@ def label(
         parent: Родитель.
         wrap: Переносить длинный текст на следующие строки.
         strike: Зачеркнуть текст.
+        tight: Без вертикального отступа (только рамка).
+        bare: Совсем без отступов (текст, который в макете нарисован прямо на
+            полотне, например в шапке таблицы).
     """
     result = QLabel(text, parent)
+    result.setProperty("line_height", 0 if wrap else line_height(style))
+    result.setProperty("side_pad", 0 if bare else LABEL_BORDER)
+    result.setProperty(
+        "inner_pad", 0 if bare else LABEL_BORDER + (0 if tight else LABEL_PAD)
+    )
+    pad(result)
     result.setFont(font(style))
     if strike:
         struck = result.font()

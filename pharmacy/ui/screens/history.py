@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from pharmacy.models import HistoryRecord
 from pharmacy.ui.fonts import line_height
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, clear_layout, label
+from pharmacy.ui.widgets.common import Line, clear_layout, label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.page import PageHeader
@@ -128,7 +128,7 @@ class HistoryScreen(QWidget):
             if not groups:
                 message = label(EMPTY_TEXT, "body", "ink_3")
                 message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                message.setContentsMargins(0, 40, 0, 40)
+                pad(message, 0, 40, 0, 40)
                 self._list.addWidget(message)
                 return
             for day, records in groups.items():
@@ -152,7 +152,7 @@ class HistoryScreen(QWidget):
         title = day_title(day)
         self._titles.append(title)
         text = label(title, "small_medium", "ink_3")
-        text.setContentsMargins(PADDING_X - self._card.inner_inset, 12, 0, 4)
+        pad(text, PADDING_X - self._card.inner_inset, 12, 0, 4)
         self._list.addWidget(text)
 
     def _event(self, record: HistoryRecord) -> None:
@@ -163,6 +163,7 @@ class HistoryScreen(QWidget):
         layout.setSpacing(0)
         clock = label(record.created_at[11:16], "small", "ink_3")
         clock.setFixedSize(TIME_WIDTH, line_height("small"))
+        clock.setContentsMargins(2, 0, 2, 0)
         layout.addWidget(clock)
         layout.addSpacing(14 - SHADOW_PAD)
         layout.addWidget(
@@ -176,8 +177,8 @@ class HistoryScreen(QWidget):
         texts = QVBoxLayout()
         texts.setContentsMargins(0, 0, 0, 0)
         texts.setSpacing(2)
-        texts.addWidget(label(ACTION_LABELS[record.action], "strong"))
-        texts.addWidget(label(record.description, "small", "ink_2"))
+        texts.addWidget(label(ACTION_LABELS[record.action], "strong", tight=True))
+        texts.addWidget(label(record.description, "small", "ink_2", tight=True))
         layout.addLayout(texts, 1)
         self._events.append(row)
         self._list.addWidget(row)

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from pharmacy.ui.widgets.badge import Badge, badge_height, measure_badge
 from pharmacy.ui.widgets.button import Button, measure_button
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, clickable, label
+from pharmacy.ui.widgets.common import Line, clickable, label, pad
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui.widgets.page import PageHeader
@@ -105,7 +105,7 @@ class DashboardScreen(QWidget):
         subtitle = label(
             f"Вот краткая информация о ваших запасах на {today}", "lead", "ink_2"
         )
-        subtitle.setContentsMargins(CARD_SHADOW_PAD, 8, 0, 16)
+        pad(subtitle, CARD_SHADOW_PAD, 8, 0, 16)
         self._layout.addWidget(subtitle)
 
     def _build_stats(self, summary: DashboardSummary) -> None:
@@ -154,8 +154,8 @@ class DashboardScreen(QWidget):
         inner.addWidget(IconBox(icon, tone))
         inner.addSpacing(ICON_GAP)
         texts = _column()
-        texts.addWidget(label(str(value), "number"))
-        texts.addWidget(label(caption, "small", "ink_2"))
+        texts.addWidget(label(str(value), "number", tight=True))
+        texts.addWidget(label(caption, "small", "ink_2", tight=True))
         inner.addLayout(texts)
         inner.addStretch(1)
         card.body.addLayout(inner)
@@ -207,7 +207,7 @@ class DashboardScreen(QWidget):
     def _empty(card: Card, text: str) -> None:
         message = label(text, "body", "ink_3")
         message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        message.setContentsMargins(0, 40, 0, 40)
+        pad(message, 0, 40, 0, 40)
         card.body.addWidget(message)
 
     def _fill_attention(self, card: Card, views: List[ProductView]) -> None:
@@ -229,7 +229,7 @@ class DashboardScreen(QWidget):
         row.addSpacing(ICON_GAP)
         texts = _column()
         texts.addWidget(self._product_link(view), 0, Qt.AlignmentFlag.AlignLeft)
-        texts.addWidget(label(_detail(view), "small", "ink_2"))
+        texts.addWidget(label(_detail(view), "small", "ink_2", tight=True))
         row.addLayout(texts, 1)
         # Все кнопки и плашки в списке одной ширины и стоят в своих столбцах,
         # чтобы края не «плыли» от строки к строке.

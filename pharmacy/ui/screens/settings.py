@@ -127,11 +127,11 @@ class SettingsScreen(QWidget):
         texts = QVBoxLayout()
         texts.setContentsMargins(0, 0, 0, 0)
         texts.setSpacing(0)
-        texts.addWidget(label(title))
+        texts.addWidget(label(title, tight=True))
         note = None
         if hint:
             texts.addSpacing(2)
-            note = label(hint, "caption", "ink_3")
+            note = label(hint, "caption", "ink_3", tight=True)
             texts.addWidget(note)
         row.addLayout(texts)
         row.addStretch(1)

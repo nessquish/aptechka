@@ -15,7 +15,7 @@ from pharmacy.ui.paint import begin, fill_rounded
 from pharmacy.ui.widgets.badge import Badge, measure_badge
 from pharmacy.ui.widgets.button import Button, button_height, measure_button
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, clear_layout, clickable, label
+from pharmacy.ui.widgets.common import Line, clear_layout, clickable, label, pad
 from pharmacy.ui.widgets.controls import Segmented
 from pharmacy.ui.widgets.highlight import Highlight
 from pharmacy.ui.widgets.iconbox import IconBox
@@ -190,7 +190,7 @@ class NotificationsScreen(QWidget):
             if not items:
                 message = label(EMPTY_TEXT, "body", "ink_3")
                 message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                message.setContentsMargins(0, 40, 0, 40)
+                pad(message, 0, 40, 0, 40)
                 self._list.addWidget(message)
             for index, item in enumerate(items):
                 if index:
@@ -226,13 +226,14 @@ class NotificationsScreen(QWidget):
         texts = QVBoxLayout()
         texts.setContentsMargins(0, 0, 0, 0)
         texts.setSpacing(0)
-        texts.addWidget(label(KIND_LABELS[item.kind], "strong"))
+        texts.addWidget(label(KIND_LABELS[item.kind], "strong", tight=True))
         texts.addSpacing(3)
-        texts.addWidget(label(item.message, "small", "ink_2"))
+        texts.addWidget(label(item.message, "small", "ink_2", tight=True))
         inner.addLayout(texts, 1)
         inner.addSpacing(8)
         when = label(_when(item.created_at), "caption", "ink_3")
         when.setFixedSize(WHEN_WIDTH, line_height("caption"))
+        when.setContentsMargins(2, 0, 2, 0)
         when.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         inner.addWidget(when)
         inner.addSpacing(8)

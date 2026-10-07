@@ -10,7 +10,7 @@ from pharmacy.errors import NotFoundError, ValidationError
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, label
+from pharmacy.ui.widgets.common import Line, label, pad
 from pharmacy.ui.widgets.dialog import Dialog
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.link import Link
@@ -85,7 +85,7 @@ class ProductCardScreen(QWidget):
         self.card = self._build_card()
         layout.addWidget(self.card, 0, Qt.AlignmentFlag.AlignLeft)
         note = label(DISCLAIMER, "label", "ink_3")
-        note.setContentsMargins(CARD_SHADOW_PAD, 10 - CARD_SHADOW_PAD, 0, 0)
+        pad(note, CARD_SHADOW_PAD, 10 - CARD_SHADOW_PAD, 0, 0)
         layout.addWidget(note)
         layout.addStretch(1)
 
@@ -113,7 +113,7 @@ class ProductCardScreen(QWidget):
         names = QVBoxLayout()
         names.setContentsMargins(0, 0, 0, 0)
         names.setSpacing(0)
-        names.addWidget(label(product.name, "product_title"))
+        names.addWidget(label(product.name, "product_title", tight=True))
         added = datetime.strptime(product.created_at[:10], "%Y-%m-%d").date()
         names.addSpacing(2)
         names.addWidget(
@@ -121,6 +121,7 @@ class ProductCardScreen(QWidget):
                 f"{product.category_name} · добавлен {format_user_date(added)}",
                 "small",
                 "ink_3",
+                tight=True,
             )
         )
         row.addLayout(names)
@@ -182,12 +183,14 @@ class ProductCardScreen(QWidget):
         inner = QVBoxLayout()
         inner.setContentsMargins(0, 11, 0, 11)
         inner.setSpacing(0)
-        inner.addWidget(label(title, "label", "ink_3"))
+        inner.addWidget(label(title, "label", "ink_3", tight=True))
         inner.addSpacing(4)
         line = QHBoxLayout()
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(0)
-        line.addWidget(label(value, "value", color, wrap=title in WIDE_FIELDS))
+        line.addWidget(
+            label(value, "value", color, wrap=title in WIDE_FIELDS, tight=True)
+        )
         if title == "Срок годности" and self._view.days_left is not None:
             tone = "red" if self._view.days_left < 0 else "amber"
             if ProductStatus.EXPIRED not in self._view.statuses and (
@@ -195,7 +198,12 @@ class ProductCardScreen(QWidget):
             ):
                 tone = "ink_3"
             line.addWidget(
-                label(f" · {_days_phrase(self._view.days_left)}", "small", tone)
+                label(
+                    f" · {_days_phrase(self._view.days_left)}",
+                    "small",
+                    tone,
+                    tight=True,
+                )
             )
         line.addStretch(1)
         inner.addLayout(line)

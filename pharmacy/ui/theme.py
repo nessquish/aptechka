@@ -247,6 +247,41 @@ SHADOW_PAD = 4
 CARD_SHADOW_PAD = 6
 MODAL_SHADOW_PAD = 36  # большая тень окна входа и модальных окон
 
+# Высота строки текста по стилям для размеров «обычный, средний, большой».
+# Это размеры прежней вёрстки: по ним расставлены все отступы макета, поэтому
+# высота строки не зависит от того, как шрифт округляется в системе.
+LINE_HEIGHTS: Dict[str, Tuple[int, int, int]] = {
+    "display": (26, 30, 34),
+    "title": (28, 33, 34),
+    "heading": (24, 26, 30),
+    "section": (19, 21, 24),
+    "brand": (16, 20, 21),
+    "lead": (16, 20, 21),
+    "lead_medium": (16, 20, 21),
+    "value": (16, 20, 21),
+    "product_title": (21, 24, 26),
+    "body": (16, 19, 20),
+    "body_medium": (16, 19, 20),
+    "body_strong": (16, 19, 20),
+    "small": (15, 16, 19),
+    "small_medium": (15, 16, 19),
+    "caption": (15, 16, 19),
+    "label": (15, 16, 19),
+    "badge": (15, 16, 19),
+    "number": (28, 34, 39),
+    "sidebar_title": (21, 26, 28),
+    "user_name": (16, 19, 20),
+    "counter": (15, 16, 19),
+    "modal_title": (21, 24, 26),
+    "strong": (16, 19, 20),
+}
+
+
+def line_height(style: str) -> int:
+    """Высота строки текста в пикселях для стиля и выбранного размера текста."""
+    return LINE_HEIGHTS[style][tuple(TEXT_SIZES).index(_text_size)]
+
+
 # Начертания: название стиля -> (размер в пикселях, насыщенность).
 TYPOGRAPHY: Dict[str, Tuple[int, int]] = {
     "display": (20, 800),

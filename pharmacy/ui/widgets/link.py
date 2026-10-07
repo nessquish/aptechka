@@ -13,6 +13,8 @@ from pharmacy.ui.theme import palette
 
 ICON_SIZE = 14
 ICON_GAP = 6
+SIDE_PAD = 2
+VERTICAL_PAD = 3
 
 
 class Link(QAbstractButton):
@@ -49,7 +51,11 @@ class Link(QAbstractButton):
         width = text_width(self.text(), self._style)
         if self._icon:
             width += ICON_SIZE + ICON_GAP
-        return QSize(width, max(line_height(self._style), ICON_SIZE))
+        # Как у подписи: рамка в 2 пикселя по бокам и отступ 3 пикселя сверху и снизу.
+        return QSize(
+            width + 2 * SIDE_PAD,
+            max(line_height(self._style), ICON_SIZE) + 2 * VERTICAL_PAD,
+        )
 
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
@@ -58,16 +64,16 @@ class Link(QAbstractButton):
         painter = QPainter(self)
         begin(painter)
         color = palette().primary
-        left = 0
-        text_left = 0
+        left = SIDE_PAD
+        text_left = SIDE_PAD
         if self._icon:
             icon_top = round((self.height() - ICON_SIZE) / 2)
             glyph = icon_pixmap(self._icon, ICON_SIZE, color)
             if self._icon_side == "left":
-                painter.drawPixmap(0, icon_top, glyph)
-                text_left = ICON_SIZE + ICON_GAP
+                painter.drawPixmap(SIDE_PAD, icon_top, glyph)
+                text_left = SIDE_PAD + ICON_SIZE + ICON_GAP
             else:
-                left = text_width(self.text(), self._style) + ICON_GAP
+                left = SIDE_PAD + text_width(self.text(), self._style) + ICON_GAP
                 painter.drawPixmap(left, icon_top, glyph)
         painter.setPen(qcolor(color))
         painter.setFont(font(self._style))

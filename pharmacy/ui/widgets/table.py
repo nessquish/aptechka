@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QWi
 from pharmacy.ui.fonts import line_height
 from pharmacy.ui.icons import icon_pixmap
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import clickable, label
+from pharmacy.ui.widgets.common import clickable, label, pad
 from pharmacy.ui.theme import palette
 
 HEADER_PADDING_Y = 10
@@ -154,7 +154,7 @@ class DataTable(QWidget):
             layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
             return cell
         layout.addWidget(
-            label(column.title, "body_medium", "ink_2"),
+            label(column.title, "body_medium", "ink_2", bare=True),
             0,
             Qt.AlignmentFlag.AlignVCenter,
         )
@@ -246,7 +246,7 @@ class DataTable(QWidget):
         self._separator()
         message = label(text, "body", "ink_3")
         message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        message.setContentsMargins(0, 36, 0, 36)
+        pad(message, 0, 36, 0, 36)
         self._add(message, self._next_row, 0, len(self._columns))
         self._next_row += 1
 
@@ -309,6 +309,7 @@ class DataTable(QWidget):
             "strong" if spec.bold else "body",
             spec.color,
             strike=spec.strike,
+            tight=True,
         )
         if spec.on_click is not None:
             clickable(text, spec.on_click)

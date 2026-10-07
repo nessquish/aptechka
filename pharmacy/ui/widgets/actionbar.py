@@ -35,7 +35,7 @@ class ActionBar(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(PADDING_X, 0, PADDING_X, 0)
         row.setSpacing(0)
-        self._text = label("", "small", "primary_ink")
+        self._text = label("", "small", "primary_ink", bare=True)
         row.addWidget(self._text)
         row.addStretch(1)
         self.buttons = QHBoxLayout()

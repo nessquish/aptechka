@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from pharmacy.ui.fonts import font
 from pharmacy.ui.icons import icon_pixmap
 from pharmacy.ui.paint import Shadow, begin, draw_shadows, fill_rounded
-from pharmacy.ui.widgets.common import clickable, label, recolor
+from pharmacy.ui.widgets.common import clickable, label, pad, recolor
 from pharmacy.ui import theme
 from pharmacy.ui.theme import SHADOW_PAD, palette
 
@@ -124,7 +124,7 @@ class LabeledBox(QWidget):
         )
         self.content.setSpacing(8)
         self._error_label = label("", "caption", "red", wrap=True)
-        self._error_label.setContentsMargins(RING_PAD, 4 - RING_PAD, RING_PAD, 0)
+        pad(self._error_label, RING_PAD, 4 - RING_PAD, RING_PAD, 0)
         self._error_label.setVisible(False)
         outer.addWidget(self._error_label)
         if width is not None:

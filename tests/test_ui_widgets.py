@@ -13,7 +13,7 @@ from pharmacy.ui.widgets.badge import Badge, badge_height, measure_badge
 from pharmacy.ui.widgets.banner import ErrorBanner
 from pharmacy.ui.widgets.button import Button, button_height, measure_button
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, clear_layout, clickable, label
+from pharmacy.ui.widgets.common import Line, clear_layout, clickable, label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.highlight import Highlight
 from pharmacy.ui.widgets.iconbox import IconBox
@@ -359,6 +359,49 @@ class ErrorBannerTest(Holder):
         banner.hide_message()
         self.settle()
         self.assertFalse(banner.isVisible())
+
+
+class LabelMetricsTest(Holder):
+    """Подписи занимают столько же места, сколько в прежней вёрстке по макету."""
+
+    def test_every_style_has_a_line_height_for_every_size(self):
+        for style in theme.TYPOGRAPHY:
+            self.assertEqual(len(theme.LINE_HEIGHTS[style]), 3, style)
+
+    def test_line_height_grows_with_the_text_size(self):
+        for style, heights in theme.LINE_HEIGHTS.items():
+            self.assertLessEqual(heights[0], heights[1], style)
+            self.assertLessEqual(heights[1], heights[2], style)
+
+    def test_default_label_has_border_and_vertical_padding(self):
+        text = label("Текст", "body")
+        self.assertEqual(text.height(), theme.line_height("body") + 2 * (2 + 1))
+        self.assertEqual(text.contentsMargins().left(), 2)
+
+    def test_tight_label_has_only_the_border(self):
+        text = label("Текст", "body", tight=True)
+        self.assertEqual(text.height(), theme.line_height("body") + 2 * 2)
+
+    def test_bare_label_has_no_padding(self):
+        text = label("Текст", "body", bare=True)
+        self.assertEqual(text.height(), theme.line_height("body"))
+        self.assertEqual(text.contentsMargins().left(), 0)
+
+    def test_outer_padding_is_added_to_the_own_one(self):
+        text = label("Текст", "body")
+        pad(text, 6, 8, 0, 16)
+        margins = text.contentsMargins()
+        self.assertEqual((margins.left(), margins.top(), margins.bottom()), (8, 11, 19))
+        self.assertEqual(text.height(), theme.line_height("body") + 8 + 16 + 2 * 3)
+
+    def test_label_height_follows_the_text_size(self):
+        theme.set_text_size("large")
+        self.assertEqual(label("Текст", "body").height(), 20 + 6)
+
+    def test_wrapped_label_keeps_a_flexible_height(self):
+        text = label("Длинный текст " * 20, "body", wrap=True)
+        text.setFixedWidth(120)
+        self.assertGreater(text.heightForWidth(120), theme.line_height("body") * 3)
 
 
 class SmallWidgetsTest(Holder):
