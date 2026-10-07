@@ -10,7 +10,6 @@ from pharmacy.services.notification_service import KIND_LABELS
 from pharmacy.ui import labels, periods
 from pharmacy.ui.drawing import rounded_box
 from pharmacy.ui.fonts import font_spec, line_height
-from pharmacy.ui.freeze import frozen
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.badge import Badge, measure_badge
@@ -127,7 +126,6 @@ class NotificationsScreen(tk.Frame):
             items = [item for item in items if item.kind == kind]
         return items
 
-    @frozen
     def _reload(self) -> None:
         """Перерисовывает вкладки и список и обновляет счётчик в меню."""
         self._tabs.set_items(self._tab_labels())

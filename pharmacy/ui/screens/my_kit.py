@@ -8,7 +8,6 @@ from pharmacy.services.product_service import ProductView
 from pharmacy.services.status import ProductStatus
 from pharmacy.ui import labels
 from pharmacy.ui.fonts import font_spec
-from pharmacy.ui.freeze import frozen
 from pharmacy.ui.icons import render_icon
 from pharmacy.ui.drawing import rounded_box
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
@@ -227,7 +226,6 @@ class MyKitScreen(tk.Frame):
         self._footer = tk.Frame(card.body, bg=palette().card)
         self._footer.pack(fill="x")
 
-    @frozen
     def _reload(self) -> None:
         """Заново читает товары по текущим условиям и перерисовывает таблицу."""
         views = self._services.products.list_products(

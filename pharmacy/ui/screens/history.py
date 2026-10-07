@@ -8,7 +8,6 @@ from pharmacy.models import HistoryRecord
 from pharmacy.services.history_service import ACTION_LABELS
 from pharmacy.ui import labels, periods
 from pharmacy.ui.fonts import font_spec, line_height
-from pharmacy.ui.freeze import frozen
 from pharmacy.ui.theme import SHADOW_PAD, palette
 from pharmacy.ui.widgets.card import Card
 from pharmacy.ui.widgets.field import TextField
@@ -100,7 +99,6 @@ class HistoryScreen(tk.Frame):
             records = [r for r in records if needle in r.description.casefold()]
         return records
 
-    @frozen
     def _reload(self) -> None:
         pal = palette()
         for child in self._card.body.winfo_children():
