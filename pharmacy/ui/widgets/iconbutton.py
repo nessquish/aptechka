@@ -1,63 +1,61 @@
 """Маленькая кнопка с одной иконкой (свернуть или развернуть боковую панель)."""
 
-import tkinter as tk
-from typing import Callable
+from typing import Callable, Optional
 
-from pharmacy.ui.drawing import rounded_box
-from pharmacy.ui.icons import render_icon
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
+
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import begin, fill_rounded
 from pharmacy.ui.theme import mix, palette
-from pharmacy.ui.widgets.common import parent_bg, photo
 
 SIZE = 28
 ICON_SIZE = 16
 RADIUS = 7
 
 
-class IconButton(tk.Canvas):
+class IconButton(QAbstractButton):
     """Квадратная кнопка с иконкой, при наведении подсвечивается."""
 
-    def __init__(self, master: tk.Misc, icon: str, command: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        icon: str,
+        command: Callable[[], None],
+        parent: Optional[QWidget] = None,
+    ) -> None:
         """Создаёт кнопку.
 
         Args:
-            master: Родительский виджет.
             icon: Название иконки из ``icons.ICONS``.
             command: Что вызвать при нажатии.
         """
-        super().__init__(
-            master,
-            bd=0,
-            highlightthickness=0,
-            bg=parent_bg(master),
-            width=SIZE,
-            height=SIZE,
-            cursor="hand2",
-        )
+        super().__init__(parent)
         self._icon = icon
-        self._command = command
-        self._hover = False
-        self._images: list = []
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<Button-1>", lambda _event: self._command())
-        self._draw()
+        self.setFixedSize(SIZE, SIZE)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(lambda _checked=False: command())
 
-    def _on_enter(self, _event: tk.Event) -> None:
-        self._hover = True
-        self._draw()
+    def sizeHint(self) -> QSize:
+        return QSize(SIZE, SIZE)
 
-    def _on_leave(self, _event: tk.Event) -> None:
-        self._hover = False
-        self._draw()
-
-    def _draw(self) -> None:
+    def paintEvent(self, _event) -> None:
         pal = palette()
-        self.delete("all")
-        self._images = []
-        if self._hover:
-            chip = rounded_box(SIZE, SIZE, RADIUS, mix(pal.side, pal.primary_soft, 0.7))
-            self._images.append(photo(chip, self))
-            self.create_image(0, 0, image=self._images[-1], anchor="nw")
-        color = pal.primary_ink if self._hover else pal.ink_2
-        self._images.append(photo(render_icon(self._icon, ICON_SIZE, color), self))
-        self.create_image(SIZE / 2, SIZE / 2, image=self._images[-1], anchor="center")
+        painter = QPainter(self)
+        begin(painter)
+        hover = self.underMouse()
+        if hover:
+            chip = mix(pal.side, pal.primary_soft, 0.7)
+            fill_rounded(painter, QRectF(0, 0, SIZE, SIZE), RADIUS, chip)
+        color = pal.primary_ink if hover else pal.ink_2
+        offset = round((SIZE - ICON_SIZE) / 2)
+        painter.drawPixmap(offset, offset, icon_pixmap(self._icon, ICON_SIZE, color))
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)

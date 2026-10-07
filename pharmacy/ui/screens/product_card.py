@@ -1,22 +1,24 @@
 """Карточка товара (макет Figma, экраны 06 и 08): просмотр и действия над товаром."""
 
-import tkinter as tk
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Tuple
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
+
 from pharmacy.errors import NotFoundError, ValidationError
-from pharmacy.services.product_service import ProductView
-from pharmacy.services.status import ProductStatus
-from pharmacy.ui import labels, sections
-from pharmacy.ui.fonts import font_spec
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.card import Card
+from pharmacy.ui.widgets.common import Line, label
 from pharmacy.ui.widgets.dialog import Dialog
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui.widgets.page import PageHeader
+from pharmacy.services.product_service import ProductView
+from pharmacy.services.status import ProductStatus
+from pharmacy.ui import labels, sections
+from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity, plural
 
@@ -32,6 +34,7 @@ DELETE_TEXT = (
     "Товар будет удалён из аптечки вместе со связанными уведомлениями. "
     "Записи в истории останутся. Действие нельзя отменить."
 )
+WIDE_FIELDS = {"Показания / назначение", "Примечание"}
 
 
 def _days_phrase(days: int) -> str:
@@ -44,12 +47,18 @@ def _days_phrase(days: int) -> str:
     return f"через {days} {plural(days, 'день', 'дня', 'дней')}"
 
 
-class ProductCardScreen(tk.Frame):
+def _box(parent: QWidget, margins: Tuple[int, int, int, int]) -> QVBoxLayout:
+    layout = QVBoxLayout(parent)
+    layout.setContentsMargins(*margins)
+    layout.setSpacing(0)
+    return layout
+
+
+class ProductCardScreen(QWidget):
     """Подробные данные о товаре и действия над ним."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell", product_id: int) -> None:
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+    def __init__(self, shell: "MainShell", product_id: int) -> None:
+        super().__init__()
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
@@ -57,73 +66,69 @@ class ProductCardScreen(tk.Frame):
         self._view: ProductView = self._services.products.get_product(
             self._user.id, product_id
         )
-        header = PageHeader(self, "Карточка товара")
-        header.pack(fill="x")
-        Link(
-            header.actions,
-            "Назад к списку",
-            lambda: shell.navigate(sections.MY_KIT),
-            style="lead_medium",
-            icon="arrow-left",
-            icon_side="left",
-        ).pack(padx=(0, 4))
-        self._build_card()
-        tk.Label(
-            self,
-            text=DISCLAIMER,
-            bg=pal.bg,
-            fg=pal.ink_3,
-            font=font_spec("label", self),
-            padx=0,
-        ).pack(anchor="w", padx=CARD_SHADOW_PAD, pady=(10 - CARD_SHADOW_PAD, 0))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        header = PageHeader("Карточка товара")
+        header.actions.addWidget(
+            Link(
+                "Назад к списку",
+                lambda: shell.navigate(sections.MY_KIT),
+                style="lead_medium",
+                icon="arrow-left",
+                icon_side="left",
+            )
+        )
+        header.actions.addSpacing(4)
+        layout.addWidget(header)
+        layout.addSpacing(18 - CARD_SHADOW_PAD)
+        self.card = self._build_card()
+        layout.addWidget(self.card, 0, Qt.AlignmentFlag.AlignLeft)
+        note = label(DISCLAIMER, "label", "ink_3")
+        note.setContentsMargins(CARD_SHADOW_PAD, 10 - CARD_SHADOW_PAD, 0, 0)
+        layout.addWidget(note)
+        layout.addStretch(1)
 
     # --- построение ---
 
-    def _build_card(self) -> None:
-        pal = palette()
-        holder = tk.Frame(self, bg=pal.bg)
-        holder.pack(fill="x", pady=(18 - CARD_SHADOW_PAD, 0))
-        holder.columnconfigure(0, minsize=CARD_WIDTH)
-        card = Card(holder)
-        card.grid(row=0, column=0, sticky="new")
+    def _build_card(self) -> Card:
+        card = Card()
+        card.setFixedWidth(CARD_WIDTH)
         inset = card.inner_inset
-        self._build_head(card, inset)
-        tk.Frame(card.body, bg=pal.line, height=1).pack(fill="x")
-        self._build_details(card, inset)
-        tk.Frame(card.body, bg=pal.line, height=1).pack(fill="x")
-        self._build_actions(card, inset)
+        card.body.addWidget(self._build_head(inset))
+        card.body.addWidget(Line("line"))
+        card.body.addWidget(self._build_details(inset))
+        card.body.addWidget(Line("line"))
+        card.body.addWidget(self._build_actions(inset))
+        return card
 
-    def _build_head(self, card: Card, inset: int) -> None:
-        pal = palette()
+    def _build_head(self, inset: int) -> QWidget:
         product = self._view.product
-        head = tk.Frame(card.body, bg=pal.card)
-        head.pack(fill="x", padx=PADDING_X - inset, pady=(18 - inset, 18))
-        IconBox(head, "cross", "primary").pack(side="left", padx=(0, 12))
-        names = tk.Frame(head, bg=pal.card)
-        names.pack(side="left")
-        tk.Label(
-            names,
-            text=product.name,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("product_title", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
+        head = QWidget()
+        row = QHBoxLayout(head)
+        row.setContentsMargins(PADDING_X - inset, 18 - inset, PADDING_X - inset, 18)
+        row.setSpacing(0)
+        row.addWidget(IconBox("cross", "primary"))
+        row.addSpacing(12)
+        names = QVBoxLayout()
+        names.setContentsMargins(0, 0, 0, 0)
+        names.setSpacing(0)
+        names.addWidget(label(product.name, "product_title"))
         added = datetime.strptime(product.created_at[:10], "%Y-%m-%d").date()
-        tk.Label(
-            names,
-            text=f"{product.category_name} · добавлен {format_user_date(added)}",
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("small", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w", pady=(2, 0))
-        for status in reversed(self._view.statuses):
-            Badge(head, status.label, labels.STATUS_TONES[status]).pack(
-                side="right", padx=(6, 0)
+        names.addSpacing(2)
+        names.addWidget(
+            label(
+                f"{product.category_name} · добавлен {format_user_date(added)}",
+                "small",
+                "ink_3",
             )
+        )
+        row.addLayout(names)
+        row.addStretch(1)
+        for status in self._view.statuses:
+            row.addSpacing(6)
+            row.addWidget(Badge(status.label, labels.STATUS_TONES[status]))
+        return head
 
     def _details(self) -> List[Tuple[str, str, str]]:
         """Пары «название поля, значение, цвет значения» для таблицы данных."""
@@ -145,90 +150,83 @@ class ProductCardScreen(tk.Frame):
             ("Примечание", product.note or NO_DATA, "ink"),
         ]
 
-    def _build_details(self, card: Card, inset: int) -> None:
-        pal = palette()
-        grid = tk.Frame(card.body, bg=pal.card)
-        grid.pack(fill="x", padx=PADDING_X - inset, pady=(2, 2))
-        grid.columnconfigure(0, weight=1, uniform="detail")
-        grid.columnconfigure(1, weight=1, uniform="detail")
-        wide = {"Показания / назначение", "Примечание"}
+    def _build_details(self, inset: int) -> QWidget:
+        host = QWidget()
+        grid = QGridLayout(host)
+        grid.setContentsMargins(PADDING_X - inset, 2, PADDING_X - inset, 2)
+        grid.setSpacing(0)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
         row = column = 0
         for title, value, color in self._details():
-            cell = tk.Frame(grid, bg=pal.card)
-            if title in wide:
+            cell = self._detail_cell(title, value, color)
+            if title in WIDE_FIELDS:
                 if column:
                     row, column = row + 1, 0
-                cell.grid(row=row, column=0, columnspan=2, sticky="ew")
+                grid.addWidget(cell, row, 0, 1, 2)
                 row += 1
             else:
-                padx = (0, COLUMN_GAP) if column == 0 else (0, 0)
-                cell.grid(row=row, column=column, sticky="ew", padx=padx)
+                if column == 0:
+                    cell.layout().setContentsMargins(0, 0, COLUMN_GAP, 0)
+                grid.addWidget(cell, row, column)
                 column += 1
                 if column == 2:
                     row, column = row + 1, 0
-            self._fill_cell(cell, title, value, color)
+        return host
 
-    def _fill_cell(self, cell: tk.Frame, title: str, value: str, color: str) -> None:
-        pal = palette()
-        colors = {"ink": pal.ink, "ink_3": pal.ink_3}
-        inner = tk.Frame(cell, bg=pal.card)
-        inner.pack(fill="x", pady=11)
-        tk.Label(
-            inner,
-            text=title,
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("label", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w", pady=(0, 4))
-        line = tk.Frame(inner, bg=pal.card)
-        line.pack(anchor="w")
-        tk.Label(
-            line,
-            text=value,
-            bg=pal.card,
-            fg=colors[color],
-            font=font_spec("value", self),
-            padx=0,
-            pady=0,
-        ).pack(side="left")
+    def _detail_cell(self, title: str, value: str, color: str) -> QWidget:
+        cell = QWidget()
+        outer = QVBoxLayout(cell)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        inner = QVBoxLayout()
+        inner.setContentsMargins(0, 11, 0, 11)
+        inner.setSpacing(0)
+        inner.addWidget(label(title, "label", "ink_3"))
+        inner.addSpacing(4)
+        line = QHBoxLayout()
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(0)
+        line.addWidget(label(value, "value", color, wrap=title in WIDE_FIELDS))
         if title == "Срок годности" and self._view.days_left is not None:
-            tone = pal.red if self._view.days_left < 0 else pal.amber
+            tone = "red" if self._view.days_left < 0 else "amber"
             if ProductStatus.EXPIRED not in self._view.statuses and (
                 ProductStatus.EXPIRING not in self._view.statuses
             ):
-                tone = pal.ink_3
-            tk.Label(
-                line,
-                text=f" · {_days_phrase(self._view.days_left)}",
-                bg=pal.card,
-                fg=tone,
-                font=font_spec("small", self),
-                padx=0,
-                pady=0,
-            ).pack(side="left")
-        tk.Frame(cell, bg=pal.line_soft, height=1).pack(fill="x")
+                tone = "ink_3"
+            line.addWidget(
+                label(f" · {_days_phrase(self._view.days_left)}", "small", tone)
+            )
+        line.addStretch(1)
+        inner.addLayout(line)
+        outer.addLayout(inner)
+        outer.addWidget(Line("line_soft"))
+        return cell
 
-    def _build_actions(self, card: Card, inset: int) -> None:
-        pal = palette()
-        row = tk.Frame(card.body, bg=pal.card)
-        row.pack(fill="x", padx=PADDING_X - inset - SHADOW_PAD, pady=(10, 10))
-        Button(row, "Удалить", command=self._confirm_delete, variant="danger").pack(
-            side="left"
+    def _build_actions(self, inset: int) -> QWidget:
+        host = QWidget()
+        row = QHBoxLayout(host)
+        side = PADDING_X - inset - SHADOW_PAD
+        row.setContentsMargins(side, 10, side, 10)
+        row.setSpacing(0)
+        self.delete_button = Button(
+            "Удалить", command=self._confirm_delete, variant="danger"
         )
-        Button(
-            row,
+        row.addWidget(self.delete_button)
+        row.addStretch(1)
+        if self._services.shopping.is_in_list(self._user.id, self._product_id):
+            self.list_button = Button("В списке покупок", icon="check")
+            self.list_button.set_enabled(False)
+        else:
+            self.list_button = Button("В список покупок", command=self._add_to_list)
+        row.addWidget(self.list_button)
+        self.edit_button = Button(
             "Редактировать",
             command=lambda: self._shell.open_product_form(self._product_id),
             variant="primary",
-        ).pack(side="right")
-        if self._services.shopping.is_in_list(self._user.id, self._product_id):
-            listed = Button(row, "В списке покупок", icon="check")
-            listed.set_enabled(False)
-        else:
-            listed = Button(row, "В список покупок", command=self._add_to_list)
-        listed.pack(side="right")
+        )
+        row.addWidget(self.edit_button)
+        return host
 
     # --- действия ---
 

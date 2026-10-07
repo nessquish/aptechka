@@ -1,43 +1,47 @@
 """Цветной квадрат со значком (иконки в карточках, уведомлениях и истории)."""
 
-import tkinter as tk
+from typing import Optional
 
-from pharmacy.ui.drawing import rounded_box
-from pharmacy.ui.icons import render_icon
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QSizePolicy, QWidget
+
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import begin, fill_rounded
 from pharmacy.ui.widgets.badge import tone_colors
-from pharmacy.ui.widgets.common import parent_bg, photo
 
 # Название размера -> (сторона квадрата, радиус, размер значка).
 SIZES = {"md": (34, 9, 16), "sm": (28, 8, 14)}
 
 
-class IconBox(tk.Canvas):
+class IconBox(QWidget):
     """Скруглённый квадрат цветового тона с иконкой в центре."""
 
     def __init__(
-        self, master: tk.Misc, icon: str, tone: str = "primary", size: str = "md"
+        self,
+        icon: str,
+        tone: str = "primary",
+        size: str = "md",
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт значок.
 
         Args:
-            master: Родительский виджет.
             icon: Название иконки из ``icons.ICONS``.
             tone: Цветовой тон (см. ``badge.TONES``).
             size: ``md`` (34 px) или ``sm`` (28 px).
         """
-        side, radius, glyph = SIZES[size]
-        super().__init__(
-            master,
-            bd=0,
-            highlightthickness=0,
-            bg=parent_bg(master),
-            width=side,
-            height=side,
-        )
-        fill, ink = tone_colors(tone)
-        self._images = [
-            photo(rounded_box(side, side, radius, fill), self),
-            photo(render_icon(icon, glyph, ink), self),
-        ]
-        self.create_image(0, 0, image=self._images[0], anchor="nw")
-        self.create_image(side / 2, side / 2, image=self._images[1], anchor="center")
+        super().__init__(parent)
+        self._side, self._radius, self._glyph = SIZES[size]
+        self._icon = icon
+        self._tone = tone
+        self.setFixedSize(self._side, self._side)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        begin(painter)
+        fill, ink = tone_colors(self._tone)
+        fill_rounded(painter, QRectF(0, 0, self._side, self._side), self._radius, fill)
+        offset = round((self._side - self._glyph) / 2)
+        painter.drawPixmap(offset, offset, icon_pixmap(self._icon, self._glyph, ink))

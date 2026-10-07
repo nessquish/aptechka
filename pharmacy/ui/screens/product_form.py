@@ -1,19 +1,21 @@
 """Форма товара: добавление и редактирование (макет Figma, экраны 05 и 07)."""
 
-import tkinter as tk
 from typing import TYPE_CHECKING, Dict, Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
+
 from pharmacy.errors import NotFoundError, ValidationError
-from pharmacy.services.product_service import UNITS, ProductForm, ProductView
-from pharmacy.ui import sections
-from pharmacy.ui.fonts import font_spec
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.card import Card
+from pharmacy.ui.widgets.common import Line, label
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
+from pharmacy.services.product_service import UNITS, ProductForm, ProductView
+from pharmacy.ui import sections
+from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
 
@@ -27,24 +29,17 @@ COLUMN_GAP = 18
 ROW_GAP = 14
 
 
-class ProductFormScreen(tk.Frame):
+class ProductFormScreen(QWidget):
     """Форма добавления товара или редактирования уже существующего."""
 
-    def __init__(
-        self,
-        master: tk.Misc,
-        shell: "MainShell",
-        product_id: Optional[int] = None,
-    ) -> None:
+    def __init__(self, shell: "MainShell", product_id: Optional[int] = None) -> None:
         """Создаёт форму.
 
         Args:
-            master: Родительский виджет.
             shell: Оболочка главного окна.
             product_id: Редактируемый товар или None для нового.
         """
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+        super().__init__()
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
@@ -55,8 +50,13 @@ class ProductFormScreen(tk.Frame):
                 self._user.id, product_id
             )
         self._fields: Dict[str, object] = {}
-        self._build_header()
-        self._build_card()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._build_header())
+        layout.addSpacing(18 - CARD_SHADOW_PAD)
+        layout.addWidget(self._build_card(), 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addStretch(1)
         if self._existing is not None:
             self._fill(self._existing)
 
@@ -65,73 +65,65 @@ class ProductFormScreen(tk.Frame):
         """Редактируется существующий товар."""
         return self._existing is not None
 
+    @property
+    def fields(self) -> Dict[str, object]:
+        """Поля формы по именам из ``ProductForm``."""
+        return self._fields
+
     # --- построение ---
 
-    def _build_header(self) -> None:
+    def _build_header(self) -> PageHeader:
         title = "Редактирование товара" if self.editing else "Добавить товар"
         back_text = "Назад к карточке" if self.editing else "Назад к списку"
-        header = PageHeader(self, title)
-        header.pack(fill="x")
-        Link(
-            header.actions,
-            back_text,
-            self._go_back,
-            style="lead_medium",
-            icon="arrow-left",
-            icon_side="left",
-        ).pack(padx=(0, 4))
+        header = PageHeader(title)
+        header.actions.addWidget(
+            Link(
+                back_text,
+                self._go_back,
+                style="lead_medium",
+                icon="arrow-left",
+                icon_side="left",
+            )
+        )
+        header.actions.addSpacing(4)
+        return header
 
-    def _build_card(self) -> None:
-        pal = palette()
-        holder = tk.Frame(self, bg=pal.bg)
-        holder.pack(fill="x", pady=(18 - CARD_SHADOW_PAD, 0))
-        holder.columnconfigure(0, minsize=CARD_WIDTH)
-        card = Card(holder)
-        card.grid(row=0, column=0, sticky="new")
+    def _build_card(self) -> Card:
+        card = Card()
+        card.setFixedWidth(CARD_WIDTH)
         inset = card.inner_inset
-        body = tk.Frame(card.body, bg=pal.card)
-        body.pack(
-            fill="x",
-            padx=PADDING_X - inset - SHADOW_PAD,
-            pady=(PADDING_Y - inset - SHADOW_PAD, 0),
+        body = QWidget()
+        grid = QGridLayout(body)
+        grid.setContentsMargins(
+            PADDING_X - inset - SHADOW_PAD,
+            PADDING_Y - inset - SHADOW_PAD,
+            PADDING_X - inset - SHADOW_PAD,
+            ROW_GAP - SHADOW_PAD - 2,
         )
-        grid = tk.Frame(body, bg=pal.card)
-        grid.pack(fill="x")
-        grid.columnconfigure(0, weight=1, uniform="field")
-        grid.columnconfigure(1, weight=1, uniform="field")
+        grid.setHorizontalSpacing(COLUMN_GAP - 2 * SHADOW_PAD)
+        grid.setVerticalSpacing(ROW_GAP - SHADOW_PAD - 2)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
         self._add_fields(grid)
+        card.body.addWidget(body)
         self._build_footer(card, inset)
+        return card
 
-    def _put(
-        self, grid: tk.Frame, key: str, widget: tk.Misc, row: int, col: int
-    ) -> None:
-        span = 2 if key == "note" else 1
-        widget.grid(
-            row=row,
-            column=col,
-            columnspan=span,
-            sticky="new",
-            padx=(0, COLUMN_GAP - 2 * SHADOW_PAD) if col == 0 and span == 1 else 0,
-            pady=(0, ROW_GAP - SHADOW_PAD - 2),
-        )
-        self._fields[key] = widget
-
-    def _add_fields(self, grid: tk.Frame) -> None:
+    def _add_fields(self, grid: QGridLayout) -> None:
         categories = [(c.id, c.name) for c in self._services.products.list_categories()]
         change = self._refresh_save
 
-        def text(label: str, **options) -> TextField:
-            return TextField(grid, label, on_change=change, **options)
+        def text(title: str, **options) -> TextField:
+            return TextField(title, on_change=change, **options)
 
         specs = (
             ("name", text("Название", placeholder="Введите название", required=True)),
             (
                 "category_id",
                 Select(
-                    grid,
                     categories,
                     categories[0][0] if categories else None,
-                    label="Категория",
+                    label_text="Категория",
                     required=True,
                     on_change=lambda _value: change(),
                 ),
@@ -140,10 +132,9 @@ class ProductFormScreen(tk.Frame):
             (
                 "unit",
                 Select(
-                    grid,
                     UNITS,
                     UNITS[0],
-                    label="Единица измерения",
+                    label_text="Единица измерения",
                     required=True,
                     on_change=lambda _value: change(),
                 ),
@@ -176,43 +167,36 @@ class ProductFormScreen(tk.Frame):
         )
         for index, (key, widget) in enumerate(specs):
             row, col = divmod(index, 2)
+            span = 1
             if key == "note":
-                row, col = 4, 0
-            self._put(grid, key, widget, row, col)
+                row, col, span = 4, 0, 2
+            grid.addWidget(widget, row, col, 1, span, Qt.AlignmentFlag.AlignTop)
+            self._fields[key] = widget
 
     def _build_footer(self, card: Card, inset: int) -> None:
-        pal = palette()
-        tk.Frame(card.body, bg=pal.line, height=1).pack(
-            fill="x", padx=PADDING_X - inset, pady=(20 - SHADOW_PAD, 0)
+        rule = QHBoxLayout()
+        rule.setContentsMargins(
+            PADDING_X - inset, 20 - SHADOW_PAD, PADDING_X - inset, 0
         )
-        row = tk.Frame(card.body, bg=pal.card)
-        row.pack(fill="x", padx=PADDING_X - inset - SHADOW_PAD, pady=(12, 12))
-        note = tk.Frame(row, bg=pal.card)
-        note.pack(side="left", padx=SHADOW_PAD)
-        tk.Label(
-            note,
-            text="*",
-            bg=pal.card,
-            fg=pal.red,
-            font=font_spec("label", self),
-            padx=0,
-        ).pack(side="left")
-        tk.Label(
-            note,
-            text=" — обязательные поля",
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("label", self),
-            padx=0,
-        ).pack(side="left")
+        rule.addWidget(Line("line"))
+        card.body.addLayout(rule)
+        row = QHBoxLayout()
+        side = PADDING_X - inset - SHADOW_PAD
+        row.setContentsMargins(side, 12, side, 12)
+        row.setSpacing(0)
+        row.addSpacing(SHADOW_PAD)
+        row.addWidget(label("*", "label", "red"))
+        row.addWidget(label(" — обязательные поля", "label", "ink_3"))
+        row.addStretch(1)
+        self.cancel_button = Button("Отмена", self._go_back)
         self._save = Button(
-            row,
             "Сохранить изменения" if self.editing else "Сохранить",
             command=self._submit,
             variant="primary",
         )
-        self._save.pack(side="right")
-        Button(row, "Отмена", command=self._go_back).pack(side="right", padx=(0, 0))
+        row.addWidget(self.cancel_button)
+        row.addWidget(self._save)
+        card.body.addLayout(row)
 
     # --- данные ---
 
@@ -234,6 +218,11 @@ class ProductFormScreen(tk.Frame):
         """Собирает введённые значения в форму для сервиса."""
         values = {key: widget.get() for key, widget in self._fields.items()}
         return ProductForm(**values)
+
+    @property
+    def save_button(self) -> Button:
+        """Кнопка «Сохранить»."""
+        return self._save
 
     def _refresh_save(self) -> None:
         """Кнопка недоступна, пока у какого-нибудь поля показана ошибка."""

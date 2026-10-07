@@ -9,6 +9,7 @@ Windows: Python на нём не нужен. Данные программы (б
 в ``%LOCALAPPDATA%\\Моя аптечка`` и сохраняются между запусками.
 """
 
+import io
 import sys
 from pathlib import Path
 
@@ -16,8 +17,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import PyInstaller.__main__  # noqa: E402
+from PIL import Image  # noqa: E402
+from PySide6.QtCore import QBuffer, QIODevice  # noqa: E402
 
-from pharmacy.ui.appicon import ICON_SIZES, render_app_icon  # noqa: E402
+from pharmacy.ui import runtime  # noqa: E402
 
 BUILD_DIR = ROOT / "build"
 ICON_FILE = BUILD_DIR / "aptechka.ico"
@@ -28,9 +31,14 @@ EXE_NAME = "Aptechka"
 
 def make_icon() -> Path:
     """Рисует значок и сохраняет его как .ico со всеми размерами."""
+    runtime.application()
     BUILD_DIR.mkdir(exist_ok=True)
-    biggest = render_app_icon(max(ICON_SIZES))
-    biggest.save(ICON_FILE, sizes=[(size, size) for size in ICON_SIZES])
+    pixmap = runtime.render_app_icon(max(runtime.ICON_SIZES))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    pixmap.save(buffer, "PNG")
+    biggest = Image.open(io.BytesIO(bytes(buffer.data())))
+    biggest.save(ICON_FILE, sizes=[(size, size) for size in runtime.ICON_SIZES])
     return ICON_FILE
 
 
@@ -48,12 +56,9 @@ def build() -> None:
             "--noconfirm",
             "--icon",
             str(icon),
-            # Библиотека иконок svg.path импортирует pkgutil, а PyInstaller этого
-            # не замечает, поэтому модуль подключается явно.
-            "--hidden-import",
-            "pkgutil",
-            "--collect-submodules",
-            "svg.path",
+            # Интерфейс на Qt, поэтому Tkinter в программу не нужен.
+            "--exclude-module",
+            "tkinter",
             # Шрифт Inter читается из файлов, поэтому кладём их внутрь программы.
             "--add-data",
             f"{FONTS};pharmacy/ui/assets/fonts",

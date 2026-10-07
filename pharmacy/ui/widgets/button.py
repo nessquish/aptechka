@@ -1,15 +1,24 @@
 """Кнопка из макета: обычная, главная и опасная, с иконкой и без."""
 
-import tkinter as tk
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple
 
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
+
+from pharmacy.ui.fonts import font, line_height, text_width
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import (
+    Shadow,
+    backdrop,
+    begin,
+    draw_shadows,
+    fill_rounded,
+    qcolor,
+)
 from pharmacy.ui import theme
-from pharmacy.ui.drawing import Shadow, rounded_box
-from pharmacy.ui.fonts import font_spec, line_height, text_width
-from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import SHADOW_PAD, mix, palette
-from pharmacy.ui.widgets.common import parent_bg, photo
 
 ICON_GAP = 6
 DISABLED_SHARE = 0.55  # насколько цвета неактивной кнопки уходят в фон
@@ -56,128 +65,112 @@ def _shadows(variant: str) -> Tuple[Shadow, ...]:
     return (Shadow(1, 3, pal.shadow, 0.08), Shadow(2, 6, pal.shadow, 0.05))
 
 
-def button_height(widget: tk.Misc, size: str = "md") -> int:
-    """Возвращает высоту кнопки: по макету, но не меньше, чем нужно крупному тексту."""
+def button_height(size: str = "md") -> int:
+    """Высота кнопки: по макету, но не меньше, чем нужно крупному тексту."""
     spec = SIZES[size]
-    return max(spec.height, line_height(widget, spec.font) + 2 * VERTICAL_PADDING)
+    return max(spec.height, line_height(spec.font) + 2 * VERTICAL_PADDING)
 
 
-def _icon_px(spec: _Size) -> int:
-    """Размер иконки в кнопке растёт вместе с текстом."""
-    return theme.scaled(spec.icon)
+def measure_button(text: str, size: str = "md", icon: Optional[str] = None) -> int:
+    """Ширина кнопки по тексту и иконке (без полей под тень).
 
-
-def measure_button(
-    widget: tk.Misc, text: str, size: str = "md", icon: Optional[str] = None
-) -> int:
-    """Возвращает ширину кнопки по тексту и иконке (без полей под тень).
-
-    Нужна, чтобы сделать кнопки в одном столбце одинаковой ширины:
-    результат передаётся в параметр ``width`` кнопок.
+    Нужна, чтобы сделать кнопки в одном столбце одинаковой ширины: результат
+    передаётся в параметр ``width`` кнопок.
     """
     spec = SIZES[size]
-    width = text_width(widget, text, spec.font)
+    width = text_width(text, spec.font)
     if icon:
-        width += spec.icon + ICON_GAP
+        width += theme.scaled(spec.icon) + ICON_GAP
     return width + 2 * spec.padding
 
 
-class Button(tk.Canvas):
-    """Кнопка, нарисованная на Canvas.
+class Button(QAbstractButton):
+    """Кнопка, нарисованная кодом.
 
     Меняет вид при наведении и нажатии, умеет быть неактивной и растягиваться
-    на всю ширину (``fill="x"`` при размещении).
+    на всю ширину, если ей позволяет размещение.
     """
 
     def __init__(
         self,
-        master: tk.Misc,
         text: str,
         command: Optional[Callable[[], None]] = None,
         variant: str = "default",
         size: str = "md",
         icon: Optional[str] = None,
         width: Optional[int] = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт кнопку.
 
         Args:
-            master: Родительский виджет.
             text: Подпись.
             command: Что вызвать при нажатии.
             variant: ``default``, ``primary``, ``danger`` или ``danger_solid``.
             size: ``md`` (32 px), ``sm`` (26 px) или ``lg`` (36 px).
             icon: Название иконки из ``icons.ICONS`` слева от подписи.
             width: Ширина кнопки в пикселях (по умолчанию по тексту).
+
+        Raises:
+            ValueError: Если такого вида кнопки нет.
         """
-        super().__init__(
-            master, bd=0, highlightthickness=0, bg=parent_bg(master), cursor="hand2"
-        )
+        super().__init__(parent)
         if variant not in VARIANTS:
             raise ValueError(f"Неизвестный вид кнопки: {variant}")
-        self._text = text
-        self._command = command
+        self.setText(text)
         self._variant = variant
         self._size_name = size
-        self._size = SIZES[size]
-        self._height = button_height(self, size)
-        self._icon_size = _icon_px(self._size)
+        self._spec = SIZES[size]
         self._icon = icon
-        self._enabled = True
-        self._hover = False
-        self._pressed = False
-        self._images: list = []
-        self._body_width = width or self._natural_width()
-        self.configure(
-            width=self._body_width + 2 * SHADOW_PAD,
-            height=self._height + 2 * SHADOW_PAD,
-        )
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<ButtonPress-1>", self._on_press)
-        self.bind("<ButtonRelease-1>", self._on_release)
-        self.bind("<Configure>", self._on_resize)
-        self._draw()
-
-    @property
-    def text(self) -> str:
-        """Подпись кнопки."""
-        return self._text
+        self._height = button_height(size)
+        self._body_width = width
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(self._height + 2 * SHADOW_PAD)
+        if command is not None:
+            self.clicked.connect(lambda _checked=False: command())
 
     @property
     def enabled(self) -> bool:
         """Нажимается ли кнопка."""
-        return self._enabled
+        return self.isEnabled()
 
     def set_enabled(self, enabled: bool) -> None:
         """Включает или выключает кнопку."""
-        self._enabled = enabled
-        self._hover = self._pressed = False
-        self.configure(cursor="hand2" if enabled else "arrow")
-        self._draw()
+        self.setEnabled(enabled)
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if enabled else Qt.CursorShape.ArrowCursor
+        )
 
     def set_text(self, text: str) -> None:
         """Меняет подпись."""
-        self._text = text
-        self._draw()
+        self.setText(text)
+        self.updateGeometry()
+        self.update()
 
     def invoke(self) -> None:
         """Нажимает кнопку программно."""
-        if self._enabled and self._command is not None:
-            self._command()
+        if self.isEnabled():
+            self.click()
 
-    def _natural_width(self) -> int:
-        """Ширина по тексту и иконке."""
-        return measure_button(self, self._text, self._size_name, self._icon)
+    def sizeHint(self) -> QSize:
+        body = self._body_width or measure_button(
+            self.text(), self._size_name, self._icon
+        )
+        return QSize(body + 2 * SHADOW_PAD, self._height + 2 * SHADOW_PAD)
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
 
     def _state_colors(self) -> Tuple[str, str, str]:
         """Цвета с учётом наведения, нажатия и недоступности."""
         fill, border, ink = _colors(self._variant)
-        if not self._enabled:
-            bg = parent_bg(self)
+        if not self.isEnabled():
+            bg = backdrop(self)
             return tuple(mix(c, bg, DISABLED_SHARE) for c in (fill, border, ink))
-        if self._pressed or self._hover:
-            share = PRESSED_SHARE if self._pressed else HOVER_SHARE
+        if self.isDown() or self.underMouse():
+            share = PRESSED_SHARE if self.isDown() else HOVER_SHARE
             tint = (
                 "#000000"
                 if self._variant in ("primary", "danger_solid")
@@ -186,72 +179,41 @@ class Button(tk.Canvas):
             fill = mix(fill, tint, share)
         return fill, border, ink
 
-    def _draw(self) -> None:
-        """Перерисовывает кнопку целиком."""
-        self.delete("all")
-        self._images.clear()
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        begin(painter)
         fill, border, ink = self._state_colors()
-        shadows = _shadows(self._variant) if self._enabled else ()
-        box = rounded_box(
-            self._body_width,
-            self._height,
-            theme.CONTROL_RADIUS,
-            fill,
-            border,
-            shadows=shadows,
-            pad=SHADOW_PAD,
+        body = QRectF(
+            SHADOW_PAD, SHADOW_PAD, self.width() - 2 * SHADOW_PAD, self._height
         )
-        self._images.append(photo(box, self))
-        self.create_image(0, 0, image=self._images[-1], anchor="nw")
+        if self.isEnabled():
+            draw_shadows(painter, body, theme.CONTROL_RADIUS, _shadows(self._variant))
+        fill_rounded(painter, body, theme.CONTROL_RADIUS, fill, border)
 
-        center_y = SHADOW_PAD + self._height / 2
-        content = text_width(self, self._text, self._size.font)
-        left = SHADOW_PAD + (self._body_width - content) / 2
+        icon_size = theme.scaled(self._spec.icon)
+        content = text_width(self.text(), self._spec.font)
         if self._icon:
-            content += self._icon_size + ICON_GAP
-            left = SHADOW_PAD + (self._body_width - content) / 2
-            glyph = render_icon(self._icon, self._icon_size, ink)
-            self._images.append(photo(glyph, self))
-            self.create_image(left, center_y, image=self._images[-1], anchor="w")
-            left += self._icon_size + ICON_GAP
-        self.create_text(
-            left,
-            center_y,
-            text=self._text,
-            anchor="w",
-            fill=ink,
-            font=font_spec(self._size.font, self),
+            content += icon_size + ICON_GAP
+        left = body.left() + (body.width() - content) / 2
+        if self._icon:
+            glyph = icon_pixmap(self._icon, icon_size, ink)
+            painter.drawPixmap(
+                round(left), round(body.center().y() - icon_size / 2), glyph
+            )
+            left += icon_size + ICON_GAP
+        painter.setPen(qcolor(ink))
+        painter.setFont(font(self._spec.font))
+        text_box = QRectF(left, body.top(), body.right() - left, body.height())
+        painter.drawText(
+            text_box,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self.text(),
         )
 
-    def _on_resize(self, event: tk.Event) -> None:
-        """Подгоняет кнопку под ширину, выданную менеджером размещения."""
-        width = event.width - 2 * SHADOW_PAD
-        if width != self._body_width and width > 0:
-            self._body_width = width
-            self._draw()
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
 
-    def _on_enter(self, _event: tk.Event) -> None:
-        if self._enabled:
-            self._hover = True
-            self._draw()
-
-    def _on_leave(self, _event: tk.Event) -> None:
-        self._hover = self._pressed = False
-        if self._enabled:
-            self._draw()
-
-    def _on_press(self, _event: tk.Event) -> None:
-        if self._enabled:
-            self._pressed = True
-            self._draw()
-
-    def _on_release(self, event: tk.Event) -> None:
-        if not (self._enabled and self._pressed):
-            return
-        self._pressed = False
-        self._draw()
-        inside = (
-            0 <= event.x < self.winfo_width() and 0 <= event.y < self.winfo_height()
-        )
-        if inside and self._command is not None:
-            self._command()
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)

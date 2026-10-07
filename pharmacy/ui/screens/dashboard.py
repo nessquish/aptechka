@@ -1,21 +1,23 @@
-﻿"""Экран «Главная» (макет Figma, экран 03): сводка по аптечке."""
+"""Экран «Главная» (макет Figma, экран 03): сводка по аптечке."""
 
-import tkinter as tk
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Callable, List
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+
+from pharmacy.ui.widgets.badge import Badge, badge_height, measure_badge
+from pharmacy.ui.widgets.button import Button, measure_button
+from pharmacy.ui.widgets.card import Card
+from pharmacy.ui.widgets.common import Line, clickable, label
+from pharmacy.ui.widgets.iconbox import IconBox
+from pharmacy.ui.widgets.link import Link
+from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.services.dashboard_service import DashboardSummary
 from pharmacy.services.product_service import ProductView
 from pharmacy.services.status import ProductStatus
 from pharmacy.ui import labels, sections
-from pharmacy.ui.fonts import font_spec
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
-from pharmacy.ui.widgets.badge import Badge, badge_height, measure_badge
-from pharmacy.ui.widgets.button import Button, measure_button
-from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.iconbox import IconBox
-from pharmacy.ui.widgets.link import Link
-from pharmacy.ui.widgets.page import PageHeader
+from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
 
@@ -28,14 +30,7 @@ LEFT_WEIGHT, RIGHT_WEIGHT = 16, 10  # колонки 1.6fr и 1fr из маке�
 OPEN_TAB = 1  # вкладка «Не куплено» в списке покупок
 ROW_PADDING_X = 18
 ROW_PADDING_Y = 8
-
-
-def _make_clickable(widget: tk.Misc, command: Callable[[], None]) -> None:
-    """Делает виджет и всё, что в нём лежит, нажимаемым (рука вместо стрелки)."""
-    widget.configure(cursor="hand2")
-    widget.bind("<Button-1>", lambda _event: command(), add="+")
-    for child in widget.winfo_children():
-        _make_clickable(child, command)
+ICON_GAP = 12
 
 
 def _detail(view: ProductView) -> str:
@@ -53,56 +48,70 @@ def _detail(view: ProductView) -> str:
     )
 
 
-class DashboardScreen(tk.Frame):
+def _column() -> QVBoxLayout:
+    layout = QVBoxLayout()
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+    return layout
+
+
+def _row_layout() -> QHBoxLayout:
+    layout = QHBoxLayout()
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+    return layout
+
+
+class DashboardScreen(QWidget):
     """Приветствие, четыре счётчика, товары, требующие внимания, и новые товары."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell") -> None:
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+    def __init__(self, shell: "MainShell") -> None:
+        super().__init__()
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
         summary = self._services.dashboard.summary(self._user.id)
         self._button_width = max(
-            measure_button(self, "В список", "sm"),
-            measure_button(self, "В списке", "sm", "check"),
+            measure_button("В список", "sm"),
+            measure_button("В списке", "sm", "check"),
         )
-        self._badge_width = max(measure_badge(self, s.label) for s in ProductStatus)
+        self._badge_width = max(measure_badge(s.label) for s in ProductStatus)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self.stat_cards: List[Card] = []
         self._build_header()
         self._build_subtitle()
         self._build_stats(summary)
         self._build_columns(summary)
+        self._layout.addStretch(1)
 
     # --- верхняя часть ---
 
     def _build_header(self) -> None:
         text = f"{labels.greeting(datetime.now().hour)}, {self._user.username}!"
-        header = PageHeader(self, text)
-        header.pack(fill="x")
-        Button(
-            header.actions,
+        header = PageHeader(text)
+        self.add_button = Button(
             "Добавить товар",
             command=lambda: self._shell.navigate(sections.MY_KIT),
             variant="primary",
             icon="plus",
-        ).pack()
+        )
+        header.actions.addWidget(self.add_button)
+        self._layout.addWidget(header)
 
     def _build_subtitle(self) -> None:
-        pal = palette()
         today = format_user_date(date.today())
-        tk.Label(
-            self,
-            text=f"Вот краткая информация о ваших запасах на {today}",
-            bg=pal.bg,
-            fg=pal.ink_2,
-            font=font_spec("lead", self),
-            padx=0,
-        ).pack(anchor="w", padx=CARD_SHADOW_PAD, pady=(8, 16))
+        subtitle = label(
+            f"Вот краткая информация о ваших запасах на {today}", "lead", "ink_2"
+        )
+        subtitle.setContentsMargins(CARD_SHADOW_PAD, 8, 0, 16)
+        self._layout.addWidget(subtitle)
 
     def _build_stats(self, summary: DashboardSummary) -> None:
-        pal = palette()
-        row = tk.Frame(self, bg=pal.bg)
-        row.pack(fill="x")
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(STAT_GAP)
         shell = self._shell
         stats = (
             ("cross", "primary", summary.total, "Товаров в аптечке", shell.open_kit),
@@ -128,199 +137,150 @@ class DashboardScreen(tk.Frame):
                 lambda: shell.open_shopping(OPEN_TAB),
             ),
         )
-        for column, (icon, tone, value, caption, command) in enumerate(stats):
-            row.columnconfigure(column, weight=1, uniform="stat")
-            card = Card(row)
-            card.grid(
-                row=0,
-                column=column,
-                sticky="ew",
-                padx=(0 if column == 0 else STAT_GAP, 0),
-            )
+        for icon, tone, value, caption, command in stats:
+            card = Card()
             self._fill_stat(card, icon, tone, value, caption)
-            _make_clickable(card, command)
+            clickable(card, command)
+            row.addWidget(card, 1)
+            self.stat_cards.append(card)
+        self._layout.addLayout(row)
 
     def _fill_stat(
         self, card: Card, icon: str, tone: str, value: int, caption: str
     ) -> None:
-        pal = palette()
         inset = card.inner_inset
-        inner = tk.Frame(card.body, bg=pal.card)
-        inner.pack(fill="x", padx=16 - inset, pady=14 - inset)
-        IconBox(inner, icon, tone).pack(side="left", padx=(0, 12))
-        texts = tk.Frame(inner, bg=pal.card)
-        texts.pack(side="left")
-        tk.Label(
-            texts,
-            text=str(value),
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("number", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
-        tk.Label(
-            texts,
-            text=caption,
-            bg=pal.card,
-            fg=pal.ink_2,
-            font=font_spec("small", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
+        inner = _row_layout()
+        inner.setContentsMargins(16 - inset, 14 - inset, 16 - inset, 14 - inset)
+        inner.addWidget(IconBox(icon, tone))
+        inner.addSpacing(ICON_GAP)
+        texts = _column()
+        texts.addWidget(label(str(value), "number"))
+        texts.addWidget(label(caption, "small", "ink_2"))
+        inner.addLayout(texts)
+        inner.addStretch(1)
+        card.body.addLayout(inner)
 
     # --- два списка ---
 
     def _build_columns(self, summary: DashboardSummary) -> None:
-        pal = palette()
-        columns = tk.Frame(self, bg=pal.bg)
-        columns.pack(fill="x", pady=(16 - 2 * CARD_SHADOW_PAD, 0))
-        columns.columnconfigure(0, weight=LEFT_WEIGHT, uniform="column")
-        columns.columnconfigure(1, weight=RIGHT_WEIGHT, uniform="column")
-        left = self._list_card(
-            columns,
+        columns = QHBoxLayout()
+        columns.setContentsMargins(0, 16 - 2 * CARD_SHADOW_PAD, 0, 0)
+        columns.setSpacing(COLUMN_GAP)
+        self.attention_card = self._list_card(
             "Требуют внимания",
             "Все уведомления",
             lambda: self._shell.navigate(sections.NOTIFICATIONS),
         )
-        left.grid(row=0, column=0, sticky="new")
-        right = self._list_card(
-            columns,
+        self.recent_card = self._list_card(
             "Последние добавленные",
             "Вся аптечка",
             lambda: self._shell.navigate(sections.MY_KIT),
         )
-        right.grid(row=0, column=1, sticky="new", padx=(COLUMN_GAP, 0))
-        self._fill_attention(left, summary.attention)
-        self._fill_recent(right, summary.recent_products)
+        columns.addWidget(self.attention_card, LEFT_WEIGHT, Qt.AlignmentFlag.AlignTop)
+        columns.addWidget(self.recent_card, RIGHT_WEIGHT, Qt.AlignmentFlag.AlignTop)
+        self._fill_attention(self.attention_card, summary.attention)
+        self._fill_recent(self.recent_card, summary.recent_products)
+        self._layout.addLayout(columns)
 
-    def _list_card(
-        self, master: tk.Misc, title: str, link: str, command: Callable[[], None]
-    ) -> Card:
+    def _list_card(self, title: str, link: str, command: Callable[[], None]) -> Card:
         """Карточка со строкой заголовка и ссылкой справа."""
-        pal = palette()
-        card = Card(master)
-        head = tk.Frame(card.body, bg=pal.card)
-        head.pack(fill="x", padx=ROW_PADDING_X - card.inner_inset, pady=(10, 10))
-        tk.Label(
-            head,
-            text=title,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("section", self),
-            padx=0,
-        ).pack(side="left")
-        Link(head, link, command, icon="arrow-right").pack(side="right")
-        self._divider(card.body)
+        card = Card()
+        head = _row_layout()
+        head.setContentsMargins(ROW_PADDING_X - card.inner_inset, 10, 0, 10)
+        head.addWidget(label(title, "section"))
+        head.addStretch(1)
+        head.addWidget(Link(link, command, icon="arrow-right"))
+        head.addSpacing(ROW_PADDING_X - card.inner_inset)
+        card.body.addLayout(head)
+        card.body.addWidget(Line())
         return card
 
-    def _divider(self, master: tk.Misc) -> None:
-        tk.Frame(master, bg=palette().line_soft, height=1).pack(fill="x")
-
-    def _row(self, card: Card) -> tk.Frame:
+    def _row(self, card: Card) -> QHBoxLayout:
         """Строка списка внутри карточки с отступами макета."""
-        row = tk.Frame(card.body, bg=palette().card)
-        row.pack(
-            fill="x",
-            padx=ROW_PADDING_X - card.inner_inset - SHADOW_PAD,
-            pady=ROW_PADDING_Y,
-        )
+        row = _row_layout()
+        side = ROW_PADDING_X - card.inner_inset - SHADOW_PAD
+        row.setContentsMargins(side, ROW_PADDING_Y, side, ROW_PADDING_Y)
+        card.body.addLayout(row)
         return row
 
+    @staticmethod
+    def _empty(card: Card, text: str) -> None:
+        message = label(text, "body", "ink_3")
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setContentsMargins(0, 40, 0, 40)
+        card.body.addWidget(message)
+
     def _fill_attention(self, card: Card, views: List[ProductView]) -> None:
-        pal = palette()
         if not views:
-            tk.Label(
-                card.body,
-                text="Всё в порядке: срочных дел нет",
-                bg=pal.card,
-                fg=pal.ink_3,
-                font=font_spec("body", self),
-            ).pack(pady=40)
+            self._empty(card, "Всё в порядке: срочных дел нет")
             return
         for index, view in enumerate(views):
             if index:
-                self._divider(card.body)
+                card.body.addWidget(Line())
             self._attention_row(card, view)
 
     def _attention_row(self, card: Card, view: ProductView) -> None:
-        pal = palette()
         status = view.primary_status
         row = self._row(card)
-        IconBox(
-            row, labels.STATUS_ICONS[status], labels.STATUS_TONES[status], "sm"
-        ).pack(side="left", padx=(SHADOW_PAD, 12))
-        texts = tk.Frame(row, bg=pal.card)
-        texts.pack(side="left", fill="x", expand=True)
-        self._product_link(texts, view).pack(anchor="w")
-        tk.Label(
-            texts,
-            text=_detail(view),
-            bg=pal.card,
-            fg=pal.ink_2,
-            font=font_spec("small", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
-        product_id = view.product.id
+        row.addSpacing(SHADOW_PAD)
+        row.addWidget(
+            IconBox(labels.STATUS_ICONS[status], labels.STATUS_TONES[status], "sm")
+        )
+        row.addSpacing(ICON_GAP)
+        texts = _column()
+        texts.addWidget(self._product_link(view), 0, Qt.AlignmentFlag.AlignLeft)
+        texts.addWidget(label(_detail(view), "small", "ink_2"))
+        row.addLayout(texts, 1)
         # Все кнопки и плашки в списке одной ширины и стоят в своих столбцах,
         # чтобы края не «плыли» от строки к строке.
+        slot = QWidget()
+        slot.setFixedSize(self._badge_width, badge_height())
+        Badge(status.label, labels.STATUS_TONES[status], parent=slot)
+        row.addWidget(slot)
+        row.addSpacing(ICON_GAP)
+        product_id = view.product.id
         if self._services.shopping.is_in_list(self._user.id, product_id):
             action = Button(
-                row, "В списке", size="sm", icon="check", width=self._button_width
+                "В списке", size="sm", icon="check", width=self._button_width
             )
             action.set_enabled(False)
         else:
             action = Button(
-                row,
                 "В список",
                 size="sm",
                 width=self._button_width,
                 command=lambda: self._add_to_list(product_id),
             )
-        action.pack(side="right")
-        slot = tk.Frame(
-            row, bg=pal.card, width=self._badge_width, height=badge_height(self)
-        )
-        slot.pack_propagate(False)
-        slot.pack(side="right", padx=(0, 12))
-        Badge(slot, status.label, labels.STATUS_TONES[status]).pack(side="left")
+        row.addWidget(action)
 
     def _fill_recent(self, card: Card, views: List[ProductView]) -> None:
-        pal = palette()
         if not views:
-            tk.Label(
-                card.body,
-                text="Товаров пока нет",
-                bg=pal.card,
-                fg=pal.ink_3,
-                font=font_spec("body", self),
-            ).pack(pady=40)
+            self._empty(card, "Товаров пока нет")
             return
         for index, view in enumerate(views):
             if index:
-                self._divider(card.body)
+                card.body.addWidget(Line())
             row = self._row(card)
             product = view.product
             added = format_user_date(
                 datetime.strptime(product.created_at[:10], "%Y-%m-%d").date()
             )
-            self._product_link(row, view).pack(anchor="w", padx=SHADOW_PAD)
-            tk.Label(
-                row,
-                text=f"{labels.short_category(product.category_name)} · {added}",
-                bg=pal.card,
-                fg=pal.ink_2,
-                font=font_spec("small", self),
-                padx=0,
-                pady=0,
-            ).pack(anchor="w", padx=SHADOW_PAD)
+            texts = _column()
+            texts.setContentsMargins(SHADOW_PAD, 0, SHADOW_PAD, 0)
+            texts.addWidget(self._product_link(view), 0, Qt.AlignmentFlag.AlignLeft)
+            texts.addWidget(
+                label(
+                    f"{labels.short_category(product.category_name)} · {added}",
+                    "small",
+                    "ink_2",
+                )
+            )
+            row.addLayout(texts, 1)
 
-    def _product_link(self, master: tk.Misc, view: ProductView) -> Link:
+    def _product_link(self, view: ProductView) -> Link:
         """Название товара, по нажатию на которое открывается его карточка."""
         product_id = view.product.id
         return Link(
-            master,
             view.product.name,
             lambda: self._shell.open_product(product_id),
             style="strong",

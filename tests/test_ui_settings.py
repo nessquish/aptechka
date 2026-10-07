@@ -1,12 +1,14 @@
 """Тесты экрана «Настройки»: профиль, пароль, уведомления, тема."""
 
-import tkinter as tk
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QLabel
 
 from pharmacy.errors import AuthenticationError
 from pharmacy.ui import sections, theme
 from pharmacy.ui.screens.settings import SAVED, SettingsScreen
-from pharmacy.ui.widgets.badge import Badge
-from tests.test_ui_shell import ShellTestCase, find_all
+from tests.qt_helpers import ShellTestCase, click, find_all, settle, type_text
 
 PASSWORD = "demo12345"
 
@@ -14,19 +16,15 @@ PASSWORD = "demo12345"
 class SettingsTestCase(ShellTestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.open()
+        self.open_settings()
 
-    def open(self) -> SettingsScreen:
+    def open_settings(self) -> SettingsScreen:
         self.shell.navigate(sections.SETTINGS)
         self.settle()
         return self.page
 
-    @property
-    def page(self) -> SettingsScreen:
-        return self.shell._current
-
     def field(self, key):
-        return self.page._fields[key]
+        return self.page.fields[key]
 
     def user(self):
         return self.services.settings.get_user(self.app.user.id)
@@ -41,12 +39,13 @@ class ProfileTest(SettingsTestCase):
         self.assertEqual(self.field("username").get(), "Анастасия")
         self.assertEqual(self.field("login").get(), "nessquish")
         self.assertEqual(self.field("email").get(), "nessquish@mail.ru")
-        self.assertEqual(self.page._days.get(), "30")
+        self.assertEqual(self.page.days_field.get(), "30")
 
     def test_login_cannot_be_changed(self):
         field = self.field("login")
-        field.entry.insert(0, "x")
+        type_text(field.entry, "x")
         self.assertEqual(field.get(), "nessquish")
+        self.assertTrue(field.entry.isReadOnly())
 
     def test_saves_name_and_email_and_shows_notice(self):
         self.field("username").set("Настя")
@@ -55,9 +54,10 @@ class ProfileTest(SettingsTestCase):
         saved = self.user()
         self.assertEqual((saved.username, saved.email), ("Настя", "nastya@mail.ru"))
         self.assertEqual(self.app.user.username, "Настя")
-        texts = [w.cget("text") for w in find_all(self.shell, tk.Label)]
+        texts = [w.text() for w in find_all(self.shell, QLabel)]
         self.assertIn("Настя", texts)  # имя в боковом меню обновилось
-        self.assertTrue(find_all(self.page._header, Badge))
+        self.assertIsNotNone(self.page.notice)
+        self.assertEqual(self.page.notice.text, SAVED)
         self.assertEqual(self.shell.take_notice(), "")
 
     def test_bad_email_is_marked(self):
@@ -71,53 +71,58 @@ class ProfileTest(SettingsTestCase):
         self.save()
         self.assertIsNotNone(self.field("username").error)
 
+    def test_save_button_saves(self):
+        self.field("username").set("Настя")
+        self.page.save_button.invoke()
+        self.settle()
+        self.assertEqual(self.user().username, "Настя")
+
 
 class CurrentPasswordTest(SettingsTestCase):
+    def clipboard(self) -> str:
+        return QGuiApplication.clipboard().text()
+
     def test_current_password_is_shown_as_dots(self):
         field = self.field("old_password")
-        self.assertEqual(field.entry.cget("show"), "•")
+        self.assertEqual(field.entry.echoMode(), field.entry.EchoMode.Password)
         self.assertEqual(field.get(), PASSWORD)
 
     def test_eye_shows_the_real_password(self):
         field = self.field("old_password")
-        canvas = field.entry.master
-        canvas.event_generate("<ButtonPress-1>", x=canvas.winfo_width() - 15, y=15)
-        self.assertEqual(field.entry.cget("show"), "")
-        self.assertEqual(field.entry.get(), PASSWORD)
-        canvas.event_generate("<ButtonPress-1>", x=canvas.winfo_width() - 15, y=15)
-        self.assertEqual(field.entry.cget("show"), "•")
+        click(field._trailing)
+        self.assertEqual(field.entry.echoMode(), field.entry.EchoMode.Normal)
+        self.assertEqual(field.entry.text(), PASSWORD)
+        click(field._trailing)
+        self.assertEqual(field.entry.echoMode(), field.entry.EchoMode.Password)
 
     def test_clicking_the_field_does_not_erase_it(self):
         field = self.field("old_password")
-        field.entry.event_generate("<FocusIn>")
-        field.entry.event_generate("<FocusOut>")
-        field.entry.master.event_generate("<ButtonPress-1>", x=40, y=15)
+        click(field.frame, 40, 15)
+        click(field.entry)
         self.assertEqual(field.get(), PASSWORD)
 
     def test_current_password_cannot_be_edited(self):
         field = self.field("old_password")
-        field.entry.insert(0, "x")
-        field.entry.delete(0, "end")
+        type_text(field.entry, "x")
+        QTest.keyClick(field.entry, Qt.Key.Key_Backspace)
         self.assertEqual(field.get(), PASSWORD)
 
     def test_it_can_be_copied_but_not_cut(self):
         field = self.field("old_password")
-        field.entry.focus_force()
-        field.entry.selection_range(0, "end")
-        field.entry.event_generate("<<Copy>>")
-        self.assertEqual(self.root_clipboard(), PASSWORD)
-        self.app.clipboard_clear()
-        field.entry.event_generate("<<Cut>>")
+        field.entry.setFocus()
+        field.entry.selectAll()
+        QTest.keyClick(field.entry, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+        self.assertEqual(self.clipboard(), PASSWORD)
+        QGuiApplication.clipboard().setText("")
+        field.entry.selectAll()
+        QTest.keyClick(field.entry, Qt.Key.Key_X, Qt.KeyboardModifier.ControlModifier)
         self.assertEqual(field.get(), PASSWORD)
-
-    def root_clipboard(self) -> str:
-        return self.app.clipboard_get()
 
     def test_dots_placeholder_when_the_password_is_unknown(self):
         self.app.session_password = ""
-        field = self.open()._fields["old_password"]
+        field = self.open_settings().fields["old_password"]
         self.assertEqual(field.get(), "")
-        self.assertEqual(field.entry.get(), "••••••••")
+        self.assertEqual(field.entry.placeholderText(), "••••••••")
 
 
 class ChangePasswordTest(SettingsTestCase):
@@ -163,7 +168,7 @@ class ChangePasswordTest(SettingsTestCase):
 
     def test_wrong_session_password_is_reported_on_the_current_field(self):
         self.app.session_password = "не тот"
-        self.open()
+        self.open_settings()
         self.change("Новый-пароль-1", "Новый-пароль-1")
         self.assertIsNotNone(self.field("old_password").error)
         self.assertEqual(
@@ -173,16 +178,22 @@ class ChangePasswordTest(SettingsTestCase):
 
 class NotificationSettingsTest(SettingsTestCase):
     def test_toggles_are_saved(self):
-        self.page._expired.set(False)
-        self.page._low.set(False)
+        self.page.expired_toggle.set(False)
+        self.page.low_toggle.set(False)
         self.save()
         saved = self.user()
         self.assertFalse(saved.notify_expired)
         self.assertFalse(saved.notify_low_stock)
 
+    def test_clicking_a_toggle_flips_it(self):
+        toggle = self.page.expired_toggle
+        before = toggle.value
+        click(toggle)
+        self.assertEqual(toggle.value, not before)
+
     def test_warning_days_are_saved_and_refresh_notifications(self):
         before = self.services.notifications.count_unread(self.app.user.id)
-        self.page._days.set("1")
+        self.page.days_field.set("1")
         self.save()
         self.assertEqual(self.user().warning_days, 1)
         after = self.services.notifications.count_unread(self.app.user.id)
@@ -190,23 +201,25 @@ class NotificationSettingsTest(SettingsTestCase):
 
     def test_bad_days_turn_the_hint_red(self):
         for text in ("", "abc", "0", "366"):
-            self.open()
-            self.page._days.set(text)
+            self.open_settings()
+            self.page.days_field.set(text)
             self.save()
             self.assertEqual(self.user().warning_days, 30, text)
             self.assertEqual(
-                str(self.page._days_hint.cget("fg")), theme.LIGHT.red, text
+                self.page.days_hint.palette().windowText().color().name().upper(),
+                theme.LIGHT.red.upper(),
+                text,
             )
 
     def test_typing_in_days_clears_the_error(self):
-        self.page._days.set("0")
+        self.page.days_field.set("0")
         self.save()
         self.page._days_edited()
-        self.assertEqual(self.page._days_hint.cget("text"), "Предупреждать заранее")
+        self.assertEqual(self.page.days_hint.text(), "Предупреждать заранее")
 
     def test_nothing_is_saved_when_one_field_is_wrong(self):
-        self.page._low.set(False)
-        self.page._days.set("0")
+        self.page.low_toggle.set(False)
+        self.page.days_field.set("0")
         self.save()
         self.assertTrue(self.user().notify_low_stock)
 
@@ -220,28 +233,32 @@ class AppearanceTest(SettingsTestCase):
         self.assertEqual(self.user().username, "Анастасия")
 
     def test_theme_choice_applies_at_once(self):
-        self.page._theme._on_click(
-            type("E", (), {"x": self.page._theme._spans[1][0] + 5})()
-        )
+        switch = self.page.theme_switch
+        left, right = switch.spans[1]
+        click(switch, (left + right) // 2, switch.height() // 2)
         self.settle()
         self.assertEqual(theme.theme_name(), "dark")
         self.assertEqual(self.user().theme, "dark")
         # Окно перестроено, но открыт всё тот же раздел «Настройки».
-        self.assertEqual(self.app._screen.section, sections.SETTINGS)
-        self.assertIsInstance(self.app._screen._current, SettingsScreen)
+        self.assertEqual(self.shell.section, sections.SETTINGS)
+        self.assertIsInstance(self.page, SettingsScreen)
 
-    def test_notice_has_a_timer_that_is_cancelled_when_the_screen_closes(self):
+    def test_notice_has_a_timer_and_goes_away(self):
         self.field("username").set("Настя")
         self.save()
         page = self.page
-        texts = [
-            w.itemcget(i, "text")
-            for w in find_all(page._header, Badge)
-            for i in w.find_all()
-            if w.type(i) == "text"
-        ]
-        self.assertIn(SAVED, texts)
-        self.assertIsNotNone(page._notice_job)
-        self.shell.navigate(sections.HOME)
+        self.assertEqual(page.notice.text, SAVED)
+        self.assertTrue(page._notice_timer.isActive())
+        page._hide_notice()
         self.settle()
-        self.assertIsNone(page._notice_job)
+        self.assertIsNone(page.notice)
+
+    def test_hiding_the_notice_twice_is_safe(self):
+        self.field("username").set("Настя")
+        self.save()
+        self.page._hide_notice()
+        self.page._hide_notice()
+        settle()
+
+    def test_notice_is_not_shown_without_saving(self):
+        self.assertIsNone(self.page.notice)

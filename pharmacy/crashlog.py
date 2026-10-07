@@ -33,17 +33,17 @@ def write_report(error: BaseException, path: Optional[Path] = None) -> Path:
 def show_message(path: Path, error: BaseException) -> None:
     """Показывает окно с сообщением об ошибке (если удаётся создать окно)."""
     try:
-        import tkinter as tk
-        from tkinter import messagebox
+        from PySide6.QtWidgets import QMessageBox
 
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showerror(
+        from pharmacy.ui.runtime import application
+
+        application()
+        QMessageBox.critical(
+            None,
             "Моя аптечка",
             f"Программа остановилась из-за ошибки:\n{error}\n\n"
             f"Подробности записаны в файл:\n{path}",
         )
-        root.destroy()
     except Exception:  # noqa: BLE001 - окно показать не удалось, журнал уже записан
         pass
 

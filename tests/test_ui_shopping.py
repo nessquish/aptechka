@@ -1,45 +1,38 @@
 """Тесты экрана списка покупок и окна добавления."""
 
-import tkinter as tk
 from typing import List
+
+from PySide6.QtWidgets import QLabel
 
 from pharmacy.ui import sections
 from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.screens.shopping import AddItemDialog, ShoppingScreen
 from pharmacy.ui.widgets.combo import ComboField
 from pharmacy.ui.widgets.controls import Checkbox
-from tests.test_ui_products import row_texts
-from tests.test_ui_shell import ShellTestCase, find_all
+from tests.qt_helpers import ShellTestCase, click, find_all
 
 
 class ShoppingTestCase(ShellTestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.shell.navigate(sections.SHOPPING)
-        self.settle()
+        self.open(sections.SHOPPING)
 
     @property
-    def page(self) -> ShoppingScreen:
-        return self.shell._current
+    def shopping(self) -> ShoppingScreen:
+        return self.page
 
     def names(self) -> List[str]:
-        return [row[0] for row in row_texts(self.page._table)]
+        return [row[1] for row in self.shopping.table.row_texts]
 
     def boxes(self) -> List[Checkbox]:
-        rows = [
-            c for c in self.page._table._body.winfo_children() if c.winfo_children()
-        ]
-        return [
-            next(w for w in row.winfo_children() if isinstance(w, Checkbox))
-            for row in rows
-        ]
+        return self.shopping.table.cell_widgets(0)
 
     def items(self, bought=None):
         return self.services.shopping.list_items(self.app.user.id, bought)
 
     def pick(self, index: int) -> None:
         """Отмечает флажок в строке так, как это делает нажатие мышью."""
-        self.boxes()[index]._on_click(None)
+        click(self.boxes()[index])
         self.settle()
 
 
@@ -50,49 +43,66 @@ class ShoppingScreenTest(ShoppingTestCase):
 
     def test_tab_labels_show_counts(self):
         self.assertEqual(
-            self.page._tab_labels(), ["Все · 4", "Не куплено · 3", "Куплено · 1"]
+            self.shopping._tab_labels(), ["Все · 4", "Не куплено · 3", "Куплено · 1"]
         )
 
     def test_tabs_filter_the_list(self):
-        self.page._on_tab(1)
+        self.shopping._on_tab(1)
         self.assertEqual(len(self.names()), 3)
         self.assertNotIn("Витамин C", self.names())
-        self.page._on_tab(2)
+        self.shopping._on_tab(2)
+        self.assertEqual(self.names(), ["Витамин C"])
+
+    def test_clicking_a_tab_filters(self):
+        tabs = self.shopping.tabs
+        left, right = tabs.spans[2]
+        click(tabs, (left + right) // 2, tabs.height() // 2)
+        self.settle()
         self.assertEqual(self.names(), ["Витамин C"])
 
     def test_table_cells(self):
-        rows = {row[0]: row for row in row_texts(self.page._table)}
-        self.assertEqual(rows["Бинт"][1], "2 шт.")
-        self.assertEqual(rows["Бинт"][2], "Уведомление")
-        self.assertEqual(rows["Пластыри"][2], "Вручную")
-        self.assertRegex(rows["Бинт"][3], r"\d\d\.\d\d\.\d{4}")
+        rows = {row[1]: row for row in self.shopping.table.row_texts}
+        self.assertEqual(rows["Бинт"][2], "2 шт.")
+        self.assertEqual(rows["Бинт"][3], "Уведомление")
+        self.assertEqual(rows["Пластыри"][3], "Вручную")
+        self.assertRegex(rows["Бинт"][5], r"\d\d\.\d\d\.\d{4}")
+
+    def test_bought_item_has_the_green_badge(self):
+        rows = {row[1]: row for row in self.shopping.table.row_texts}
+        self.assertEqual(rows["Витамин C"][4], "Куплено")
+        self.assertEqual(rows["Бинт"][4], "Не куплено")
 
     def test_bar_is_hidden_without_selection(self):
-        self.assertFalse(self.page._bar.winfo_ismapped())
+        self.assertFalse(self.shopping.bar.isVisible())
 
     def test_selecting_rows_shows_bar_with_count(self):
         self.pick(0)
         self.pick(1)
-        self.assertTrue(self.page._bar.winfo_ismapped())
-        self.assertEqual(self.page._bar._text, "Выбрано: 2")
+        self.assertTrue(self.shopping.bar.isVisible())
+        self.assertEqual(self.shopping.bar.text, "Выбрано: 2")
 
     def test_unselecting_hides_bar(self):
         self.pick(0)
         self.pick(0)
-        self.assertFalse(self.page._bar.winfo_ismapped())
+        self.assertFalse(self.shopping.bar.isVisible())
 
     def test_select_all(self):
-        self.page._toggle_all(True)
+        self.shopping._toggle_all(True)
         self.settle()
-        self.assertEqual(self.page._bar._text, "Выбрано: 4")
-        self.assertTrue(self.page._select_all.value)
-        self.page._toggle_all(False)
-        self.assertEqual(self.page._selected, set())
+        self.assertEqual(self.shopping.bar.text, "Выбрано: 4")
+        self.assertTrue(self.shopping.select_all.value)
+        self.shopping._toggle_all(False)
+        self.assertEqual(self.shopping.selected, set())
+
+    def test_header_checkbox_selects_everything(self):
+        click(self.shopping.select_all)
+        self.settle()
+        self.assertEqual(len(self.shopping.selected), 4)
 
     def test_selection_is_cleared_when_tab_changes(self):
         self.pick(0)
-        self.page._on_tab(2)
-        self.assertEqual(self.page._selected, set())
+        self.shopping._on_tab(2)
+        self.assertEqual(self.shopping.selected, set())
 
     def test_mark_bought(self):
         self.pick(0)
@@ -100,8 +110,8 @@ class ShoppingScreenTest(ShoppingTestCase):
         self.buttons("Отметить как купленные")[0].invoke()
         self.settle()
         self.assertEqual(len(self.items(bought=True)), 3)
-        self.assertEqual(self.page._selected, set())
-        self.assertFalse(self.page._bar.winfo_ismapped())
+        self.assertEqual(self.shopping.selected, set())
+        self.assertFalse(self.shopping.bar.isVisible())
 
     def test_remove_selected(self):
         self.pick(2)
@@ -110,19 +120,22 @@ class ShoppingScreenTest(ShoppingTestCase):
         self.assertEqual(len(self.items()), 3)
         self.assertEqual(len(self.names()), 3)
 
+    def test_selected_row_is_highlighted_and_header_loses_rounding(self):
+        self.pick(0)
+        self.assertEqual(self.shopping.table._grid_host.paint_header, True)
+        self.pick(0)
+        self.assertEqual(self.shopping.table._grid_host.paint_header, False)
+
     def test_linked_item_opens_the_product_card(self):
-        row = next(
-            c for c in self.page._table._body.winfo_children() if c.winfo_children()
-        )
-        row.grid_slaves(column=1)[0].event_generate("<Button-1>")
+        first = self.shopping.table.cell_widgets(1)[0]
+        click(first)
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductCardScreen)
+        self.assertIsInstance(self.page, ProductCardScreen)
 
     def test_empty_list_message(self):
         self.db.execute("DELETE FROM shopping_list")
-        self.shell.navigate(sections.SHOPPING)
-        self.settle()
-        texts = [w.cget("text") for w in find_all(self.page, tk.Label)]
+        self.open(sections.SHOPPING)
+        texts = [w.text() for w in find_all(self.page, QLabel)]
         self.assertTrue(any("Список покупок пуст" in t for t in texts))
 
 
@@ -130,12 +143,12 @@ class AddItemDialogTest(ShoppingTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.dialog = AddItemDialog(
-            self.app, self.services, self.app.user.id, self.page._reload
+            self.app, self.services, self.app.user.id, self.shopping._reload
         )
         self.settle()
 
     def test_button_opens_the_dialog(self):
-        self.dialog.close()
+        self.dialog.close_modal()
         self.settle()
         self.assertEqual(find_all(self.app, ComboField), [])
         self.buttons("Добавить вручную")[0].invoke()
@@ -185,9 +198,16 @@ class AddItemDialogTest(ShoppingTestCase):
 
     def test_arrow_opens_the_list(self):
         field = self.dialog.name
-        canvas = field.entry.master
-        canvas.event_generate("<ButtonPress-1>", x=canvas.winfo_width() - 15, y=15)
+        click(field._trailing)
         self.settle()
-        self.assertIsNotNone(field._popup)
-        field._popup.close()
-        self.assertIsNone(field._popup)
+        self.assertIsNotNone(field.popup)
+        self.assertTrue(field.popup.isVisible())
+        field.popup.close_list()
+        self.assertIsNone(field.popup)
+
+    def test_list_picks_fill_the_field(self):
+        field = self.dialog.name
+        field.toggle_list()
+        self.settle()
+        field.popup._on_pick("Бинт")
+        self.assertEqual(field.get(), "Бинт")

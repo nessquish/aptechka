@@ -1,21 +1,23 @@
 """Таблица из макета: шапка с сортировкой и строки с разделителями."""
 
-import tkinter as tk
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Union
 
-from pharmacy.ui import theme
-from pharmacy.ui.drawing import rounded_box
-from pharmacy.ui.fonts import font_spec, line_height
-from pharmacy.ui.icons import render_icon
-from pharmacy.ui.theme import palette
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QWidget
+
+from pharmacy.ui.fonts import line_height
+from pharmacy.ui.icons import icon_pixmap
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import parent_bg, photo
+from pharmacy.ui.widgets.common import clickable, label
+from pharmacy.ui.theme import palette
 
 HEADER_PADDING_Y = 10
 CELL_PADDING_X = 12
 CELL_PADDING_Y = 9
 SORT_ICON = 12
+SORT_GAP = 4
 
 
 @dataclass(frozen=True)
@@ -52,56 +54,122 @@ class TextCell:
     on_click: Optional[Callable[[], None]] = None
 
 
-Cell = Union[str, TextCell, Callable[[tk.Misc], tk.Widget]]
+Cell = Union[str, TextCell, Callable[[], QWidget]]
 
 
-class DataTable(tk.Frame):
+class _Fill(QWidget):
+    """Однотонная полоса: подложка выбранной строки или разделитель."""
+
+    def __init__(self, color: str, height: Optional[int] = None) -> None:
+        super().__init__()
+        self._color = color
+        self.backdrop_color = color
+        if height is not None:
+            self.setFixedHeight(height)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), self._color)
+
+
+class _Table(QWidget):
+    """Сетка таблицы: сама красит шапку, если её не красит карточка."""
+
+    def __init__(self, header_height: int) -> None:
+        super().__init__()
+        self._header_height = header_height
+        self.paint_header = False
+
+    def paintEvent(self, _event) -> None:
+        if self.paint_header:
+            painter = QPainter(self)
+            painter.fillRect(
+                0, 0, self.width(), self._header_height, palette().table_head
+            )
+
+
+class DataTable(QWidget):
     """Шапка и строки таблицы. Столбцы делят ширину пропорционально весам."""
 
     def __init__(
         self,
-        master: tk.Misc,
         columns: Sequence[Column],
         card: Optional[Card] = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт таблицу без строк.
 
         Args:
-            master: Родитель (обычно ``body`` карточки с ``flush=True``).
             columns: Столбцы слева направо.
-            card: Карточка, в которую вставлена таблица. Нужна, чтобы верхние
-                углы шапки совпадали с её скруглённым краем.
+            card: Карточка, в которую вставлена таблица. Она красит шапку
+                вместе со скруглёнными верхними углами.
+            parent: Родитель.
         """
-        super().__init__(master, bg=parent_bg(master))
+        super().__init__(parent)
         self._card = card
-        if card is not None:
-            card.on_redraw(self._redraw_header)
         self._columns = list(columns)
         self._sorted: Optional[int] = None
         self._rounded_top = True
-        self._header_widgets: Dict[int, tk.Widget] = {}
-        self._images: list = []
-        self._width = 0
-        self._header_height = line_height(self, "body_medium") + 2 * HEADER_PADDING_Y
-        self._header = tk.Canvas(
-            self,
-            bd=0,
-            highlightthickness=0,
-            bg=self.cget("bg"),
-            height=self._header_height,
+        self._header_widgets: Dict[int, QWidget] = {}
+        self._header_height = line_height("body_medium") + 2 * HEADER_PADDING_Y
+        self._rows: List[QWidget] = []
+        self._cells: List[List[QWidget]] = []
+        self._next_row = 1
+        self._data_rows = 0
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._grid_host = _Table(self._header_height)
+        outer.addWidget(self._grid_host)
+        self._grid = QGridLayout(self._grid_host)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(0)
+        self._header_cells: List[QWidget] = []
+        for index, column in enumerate(self._columns):
+            if column.fixed is not None:
+                self._grid.setColumnMinimumWidth(index, column.fixed)
+                self._grid.setColumnStretch(index, 0)
+            else:
+                self._grid.setColumnStretch(index, column.weight)
+        self._grid.setRowMinimumHeight(0, self._header_height)
+        self._build_header()
+        self.set_rounded_top(True)
+
+    # --- шапка ---
+
+    def _build_header(self) -> None:
+        for cell in self._header_cells:
+            cell.setParent(None)
+            cell.deleteLater()
+        self._header_cells = []
+        for index, column in enumerate(self._columns):
+            self._header_cells.append(self._header_cell(index, column))
+            self._grid.addWidget(self._header_cells[-1], 0, index)
+
+    def _header_cell(self, index: int, column: Column) -> QWidget:
+        cell = self._wrap(None, column, HEADER_PADDING_Y)
+        layout = cell.layout()
+        widget = self._header_widgets.get(index)
+        if widget is not None:
+            layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
+            return cell
+        layout.addWidget(
+            label(column.title, "body_medium", "ink_2"),
+            0,
+            Qt.AlignmentFlag.AlignVCenter,
         )
-        self._header.pack(fill="x")
-        self._header.bind("<Configure>", self._on_resize)
-        if card is not None:
-            card.set_band(self._header_height, palette().table_head)
-        self._body = tk.Frame(self, bg=self.cget("bg"))
-        self._body.pack(fill="x")
+        if index == self._sorted:
+            arrow = QLabel()
+            arrow.setPixmap(icon_pixmap("arrow-down", SORT_ICON, palette().primary))
+            layout.addSpacing(SORT_GAP)
+            layout.addWidget(arrow, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addStretch(1)
+        return cell
 
     def set_sorted(self, index: Optional[int]) -> None:
         """Показывает стрелку сортировки у столбца (None убирает стрелку)."""
         self._sorted = index
-        if self._width:
-            self._draw_header()
+        self._build_header()
 
     def set_rounded_top(self, rounded: bool) -> None:
         """Красит шапку у верхнего края карточки.
@@ -109,176 +177,139 @@ class DataTable(tk.Frame):
         Выключается, когда над таблицей стоит панель действий.
         """
         self._rounded_top = rounded
-        if self._card is not None:
-            if rounded:
-                self._card.set_band(self._header_height, palette().table_head)
-            else:
-                self._card.set_band(0, None)
-        if self._width:
-            self._draw_header()
+        if self._card is not None and rounded:
+            self._card.set_band(self._header_height, palette().table_head)
+        elif self._card is not None:
+            self._card.set_band(0, None)
+        self._grid_host.paint_header = not (rounded and self._card is not None)
+        self._grid_host.update()
 
-    def set_header_widget(
-        self, index: int, factory: Callable[[tk.Misc], tk.Widget]
-    ) -> tk.Widget:
+    def set_header_widget(self, index: int, factory: Callable[[], QWidget]) -> QWidget:
         """Кладёт виджет в шапку вместо заголовка столбца (общий флажок).
 
         Args:
             index: Номер столбца.
-            factory: Создаёт виджет по родителю (холсту шапки).
+            factory: Создаёт виджет.
 
         Returns:
             Созданный виджет.
         """
-        widget = factory(self._header)
+        widget = factory()
         self._header_widgets[index] = widget
-        if self._width:
-            self._draw_header()
+        self._build_header()
         return widget
+
+    # --- строки ---
 
     def clear(self) -> None:
         """Удаляет все строки."""
-        for child in self._body.winfo_children():
-            child.destroy()
+        for widget in self._rows:
+            self._grid.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+        self._rows = []
+        self._cells = []
+        self._next_row = 1
+        self._data_rows = 0
 
-    def add_row(self, cells: Sequence[Cell], selected: bool = False) -> tk.Frame:
+    def _add(self, widget: QWidget, row: int, column: int, span: int = 1) -> None:
+        self._grid.addWidget(widget, row, column, 1, span)
+        self._rows.append(widget)
+
+    def _separator(self) -> None:
+        self._add(_Fill(palette().line, 1), self._next_row, 0, len(self._columns))
+        self._next_row += 1
+
+    def add_row(self, cells: Sequence[Cell], selected: bool = False) -> None:
         """Добавляет строку.
 
         Args:
             cells: Содержимое ячеек по столбцам: текст, ``TextCell`` или
-                функция, создающая виджет по родителю.
+                функция, создающая виджет.
             selected: Подсветить строку (выбранная или непрочитанная).
-
-        Returns:
-            Рамка строки.
         """
-        pal = palette()
-        tk.Frame(self._body, bg=pal.line, height=1).pack(fill="x")
-        row = tk.Frame(self._body, bg=pal.unread_bg if selected else pal.card)
-        row.pack(fill="x")
-        self._configure_columns(row)
+        self._separator()
+        row = self._next_row
+        self._next_row += 1
+        self._data_rows += 1
+        if selected:
+            self._add(_Fill(palette().unread_bg), row, 0, len(self._columns))
+        wrappers = []
         for index, cell in enumerate(cells):
-            widget = self._make_cell(row, cell)
-            widget.grid(
-                row=0,
-                column=index,
-                sticky="w",
-                padx=CELL_PADDING_X,
-                pady=CELL_PADDING_Y,
-            )
-        return row
+            wrapper = self._make_cell(cell, self._columns[index])
+            self._add(wrapper, row, index)
+            wrappers.append(wrapper)
+        self._cells.append(wrappers)
 
     def add_message(self, text: str) -> None:
         """Добавляет строку с сообщением на всю ширину («Ничего не найдено»)."""
-        pal = palette()
-        tk.Frame(self._body, bg=pal.line, height=1).pack(fill="x")
-        tk.Label(
-            self._body,
-            text=text,
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("body", self),
-        ).pack(fill="x", pady=36)
+        self._separator()
+        message = label(text, "body", "ink_3")
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setContentsMargins(0, 36, 0, 36)
+        self._add(message, self._next_row, 0, len(self._columns))
+        self._next_row += 1
 
-    def _configure_columns(self, row: tk.Frame) -> None:
-        for index, column in enumerate(self._columns):
-            if column.fixed is not None:
-                row.columnconfigure(index, minsize=column.fixed, weight=0)
-            else:
-                row.columnconfigure(
-                    index, weight=column.weight, uniform="cells", minsize=0
-                )
+    @property
+    def row_count(self) -> int:
+        """Сколько строк с данными в таблице (без сообщений)."""
+        return self._data_rows
 
-    def _make_cell(self, row: tk.Frame, cell: Cell) -> tk.Widget:
-        pal = palette()
-        background = row.cget("bg")
+    @property
+    def row_texts(self) -> List[List[str]]:
+        """Тексты ячеек всех строк (у плашки её надпись, у других виджетов пусто)."""
+        rows = []
+        for wrappers in self._cells:
+            texts = []
+            for wrapper in wrappers:
+                item = wrapper.layout().itemAt(0)
+                content = item.widget() if item is not None else None
+                if isinstance(content, QLabel):
+                    texts.append(content.text())
+                else:
+                    value = getattr(content, "text", "")
+                    texts.append(value() if callable(value) else value)
+            rows.append(texts)
+        return rows
+
+    def cell_widgets(self, column: int) -> List[QWidget]:
+        """Содержимое ячеек одного столбца по строкам (виджеты, не обёртки)."""
+        return [
+            wrappers[column].layout().itemAt(0).widget() for wrappers in self._cells
+        ]
+
+    @property
+    def sorted_column(self) -> Optional[int]:
+        """Столбец, у которого показана стрелка сортировки."""
+        return self._sorted
+
+    def _wrap(
+        self, content: Optional[QWidget], column: Column, padding_y: int
+    ) -> QWidget:
+        """Оборачивает содержимое ячейки: отступы и ширина по столбцу."""
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(CELL_PADDING_X, padding_y, CELL_PADDING_X, padding_y)
+        layout.setSpacing(0)
+        if column.fixed is not None:
+            cell.setFixedWidth(column.fixed)
+        else:
+            cell.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        if content is not None:
+            layout.addWidget(content, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addStretch(1)
+        return cell
+
+    def _make_cell(self, cell: Cell, column: Column) -> QWidget:
         if callable(cell):
-            return cell(row)
+            return self._wrap(cell(), column, CELL_PADDING_Y)
         spec = TextCell(cell) if isinstance(cell, str) else cell
-        colors = {
-            "ink": pal.ink,
-            "ink_2": pal.ink_2,
-            "ink_3": pal.ink_3,
-            "primary": pal.primary,
-        }
-        font = font_spec("strong" if spec.bold else "body", self)
-        if spec.strike:
-            font = (font[0], font[1], f"{font[2]} overstrike")
-        label = tk.Label(
-            row,
-            text=spec.text,
-            bg=background,
-            fg=colors[spec.color],
-            font=font,
-            padx=0,
-            pady=0,
-            anchor="w",
+        text = label(
+            spec.text,
+            "strong" if spec.bold else "body",
+            spec.color,
+            strike=spec.strike,
         )
         if spec.on_click is not None:
-            label.configure(cursor="hand2")
-            label.bind("<Button-1>", lambda _event: spec.on_click())
-        return label
-
-    # --- шапка ---
-
-    def _fractions(self) -> List[float]:
-        """Левые края столбцов шапки в долях ширины."""
-        fixed = sum(c.fixed or 0 for c in self._columns)
-        flexible = sum(c.weight for c in self._columns if c.fixed is None) or 1
-        free = max(self._width - fixed, 0)
-        lefts, position = [], 0.0
-        for column in self._columns:
-            lefts.append(position)
-            position += (
-                column.fixed
-                if column.fixed is not None
-                else (free * column.weight / flexible)
-            )
-        return lefts
-
-    def _on_resize(self, event: tk.Event) -> None:
-        if event.width != self._width:
-            self._width = event.width
-            self._draw_header()
-
-    def _redraw_header(self) -> None:
-        """Перерисовывает шапку после перерисовки карточки (изменился край)."""
-        if self._width and self.winfo_exists():
-            self._draw_header()
-
-    def _draw_header(self) -> None:
-        pal = palette()
-        canvas = self._header
-        canvas.delete("all")
-        self._images = []
-        picture = None
-        if self._card is not None and self._rounded_top:
-            # Полосу шапки (вместе со скруглёнными углами) рисует сама карточка.
-            picture = self._card.capture(canvas)
-        if picture is None:
-            radius = 0 if self._card is not None else theme.CARD_RADIUS - 1
-            picture = rounded_box(
-                self._width, self._header_height + radius, radius, pal.table_head
-            ).crop((0, 0, self._width, self._header_height))
-        self._images.append(photo(picture, canvas))
-        canvas.create_image(0, 0, image=self._images[0], anchor="nw")
-        middle = self._header_height / 2
-        lefts = self._fractions()
-        for index, widget in self._header_widgets.items():
-            canvas.create_window(
-                lefts[index] + CELL_PADDING_X, middle, window=widget, anchor="w"
-            )
-        for index, (column, left) in enumerate(zip(self._columns, lefts)):
-            item = canvas.create_text(
-                left + CELL_PADDING_X,
-                middle,
-                text=column.title,
-                anchor="w",
-                fill=pal.ink_2,
-                font=font_spec("body_medium", self),
-            )
-            if index == self._sorted:
-                right = canvas.bbox(item)[2] + 4
-                self._images.append(
-                    photo(render_icon("arrow-down", SORT_ICON, pal.primary), canvas)
-                )
-                canvas.create_image(right, middle, image=self._images[-1], anchor="w")
+            clickable(text, spec.on_click)
+        return self._wrap(text, column, CELL_PADDING_Y)

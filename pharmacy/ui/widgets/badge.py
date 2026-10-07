@@ -1,14 +1,16 @@
 """Плашка состояния («Просрочен», «Норма», «Куплено» и другие)."""
 
-import tkinter as tk
 from typing import Optional, Tuple
 
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QSizePolicy, QWidget
+
+from pharmacy.ui.fonts import font, line_height, text_width
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import begin, fill_rounded, qcolor
 from pharmacy.ui import theme
-from pharmacy.ui.drawing import rounded_box
-from pharmacy.ui.fonts import font_spec, line_height, text_width
-from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import palette
-from pharmacy.ui.widgets.common import parent_bg, photo
 
 TONES = ("red", "amber", "green", "gray", "primary")
 PADDING_X = 9
@@ -29,58 +31,71 @@ def tone_colors(tone: str) -> Tuple[str, str]:
     }[tone]
 
 
-def measure_badge(widget: tk.Misc, text: str, icon: Optional[str] = None) -> int:
-    """Возвращает ширину плашки по тексту и иконке (для выравнивания столбцов)."""
-    content = text_width(widget, text, "badge")
+def measure_badge(text: str, icon: Optional[str] = None) -> int:
+    """Ширина плашки по тексту и иконке (для выравнивания столбцов)."""
+    content = text_width(text, "badge")
     if icon:
         content += ICON_SIZE + ICON_GAP
     return content + 2 * PADDING_X
 
 
-def badge_height(widget: tk.Misc) -> int:
-    """Возвращает высоту плашки."""
-    return line_height(widget, "badge") + 2 * PADDING_Y
+def badge_height() -> int:
+    """Высота плашки."""
+    return line_height("badge") + 2 * PADDING_Y
 
 
-class Badge(tk.Canvas):
+class Badge(QWidget):
     """Небольшая цветная плашка с текстом и необязательной иконкой."""
 
     def __init__(
         self,
-        master: tk.Misc,
         text: str,
         tone: str = "gray",
         icon: Optional[str] = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт плашку.
 
         Args:
-            master: Родительский виджет.
             text: Текст.
             tone: ``red``, ``amber``, ``green``, ``gray`` или ``primary``.
             icon: Название иконки слева от текста.
+
+        Raises:
+            ValueError: Если такого тона нет.
         """
-        super().__init__(master, bd=0, highlightthickness=0, bg=parent_bg(master))
+        super().__init__(parent)
         if tone not in TONES:
             raise ValueError(f"Неизвестный тон плашки: {tone}")
-        fill, ink = tone_colors(tone)
-        width = measure_badge(self, text, icon)
-        height = badge_height(self)
-        self.configure(width=width, height=height)
-        self._images = [
-            photo(rounded_box(width, height, theme.BADGE_RADIUS, fill), self)
-        ]
-        self.create_image(0, 0, image=self._images[0], anchor="nw")
+        self._text = text
+        self._tone = tone
+        self._icon = icon
+        self.setFixedSize(measure_badge(text, icon), badge_height())
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    @property
+    def text(self) -> str:
+        """Текст плашки."""
+        return self._text
+
+    def sizeHint(self) -> QSize:
+        return self.size()
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        begin(painter)
+        fill, ink = tone_colors(self._tone)
+        box = QRectF(0, 0, self.width(), self.height())
+        fill_rounded(painter, box, theme.BADGE_RADIUS, fill)
         left = PADDING_X
-        if icon:
-            self._images.append(photo(render_icon(icon, ICON_SIZE, ink, 2.5), self))
-            self.create_image(left, height / 2, image=self._images[1], anchor="w")
+        if self._icon:
+            glyph = icon_pixmap(self._icon, ICON_SIZE, ink, 2.5)
+            painter.drawPixmap(left, round((self.height() - ICON_SIZE) / 2), glyph)
             left += ICON_SIZE + ICON_GAP
-        self.create_text(
-            left,
-            height / 2,
-            text=text,
-            anchor="w",
-            fill=ink,
-            font=font_spec("badge", self),
+        painter.setPen(qcolor(ink))
+        painter.setFont(font("badge"))
+        painter.drawText(
+            QRectF(left, 0, self.width() - left, self.height()),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self._text,
         )

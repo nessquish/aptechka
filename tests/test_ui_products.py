@@ -1,7 +1,8 @@
 """Тесты экранов товаров: список, форма, карточка."""
 
-import tkinter as tk
 from typing import List
+
+from PySide6.QtWidgets import QLabel
 
 from pharmacy.db.seed import seed_bulk
 from pharmacy.models import HistoryAction
@@ -10,37 +11,21 @@ from pharmacy.ui import sections
 from pharmacy.ui.screens.my_kit import PAGE_SIZE, MyKitScreen
 from pharmacy.ui.screens.product_card import ProductCardScreen, _days_phrase
 from pharmacy.ui.screens.product_form import ProductFormScreen
-from tests.test_ui_shell import ShellTestCase, find_all
-
-
-def row_texts(table) -> List[List[str]]:
-    """Тексты ячеек всех строк таблицы (виджеты вместо текста пропускаются)."""
-    rows = []
-    for child in table._body.winfo_children():
-        if isinstance(child, tk.Frame) and child.winfo_children():
-            labels = [
-                w.cget("text")
-                for w in sorted(
-                    child.winfo_children(), key=lambda w: w.grid_info()["column"]
-                )
-                if isinstance(w, tk.Label)
-            ]
-            rows.append(labels)
-    return rows
+from pharmacy.ui.widgets.link import Link
+from tests.qt_helpers import ShellTestCase, click, find_all
 
 
 class KitTestCase(ShellTestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.shell.navigate(sections.MY_KIT)
-        self.settle()
+        self.open(sections.MY_KIT)
 
     @property
     def kit(self) -> MyKitScreen:
-        return self.shell._current
+        return self.page
 
     def names(self) -> List[str]:
-        return [row[0] for row in row_texts(self.kit._table)]
+        return [row[0] for row in self.kit.table.row_texts]
 
     def product_id(self, name: str) -> int:
         views = self.services.products.list_products(self.app.user.id)
@@ -54,9 +39,20 @@ class MyKitTest(KitTestCase):
         self.assertEqual(names[0], "Активированный уголь")
         self.assertEqual(names[-1], "Бинт")  # товар без срока уходит вниз
 
+    def test_row_has_a_cell_for_every_column(self):
+        for row in self.kit.table.row_texts:
+            self.assertEqual(len(row), 7)
+
     def test_search_ignores_case(self):
         self.kit._search_field.set("ИБУ")
         self.kit._apply_search()
+        self.assertEqual(self.names(), ["Ибупрофен"])
+
+    def test_typing_in_search_filters_after_a_pause(self):
+        self.kit._search_field.entry.setText("ибу")
+        self.kit._search_field.entry.textEdited.emit("ибу")
+        self.assertTrue(self.kit._search_timer.isActive())
+        self.kit._search_timer.timeout.emit()
         self.assertEqual(self.names(), ["Ибупрофен"])
 
     def test_nothing_found_message(self):
@@ -64,14 +60,14 @@ class MyKitTest(KitTestCase):
         self.kit._apply_search()
         self.settle()
         self.assertEqual(self.names(), [])
-        texts = [w.cget("text") for w in find_all(self.kit, tk.Label)]
+        texts = [w.text() for w in find_all(self.kit, QLabel)]
         self.assertIn("Ничего не найдено", texts)
         self.assertIn("Показано 0 из 0", texts)
 
     def test_category_filter(self):
         category = self.services.products.list_categories()[0].id
         self.kit._on_category(category)
-        shown = row_texts(self.kit._table)
+        shown = self.kit.table.row_texts
         self.assertTrue(shown)
         for row in shown:
             self.assertEqual(row[1], "Лекарства")
@@ -80,20 +76,24 @@ class MyKitTest(KitTestCase):
         self.kit._on_status(ProductStatus.EXPIRED)
         self.assertEqual(self.names(), ["Активированный уголь"])
 
+    def test_filters_are_in_the_toolbar_and_apply(self):
+        self.kit.status_select._pick(ProductStatus.EXPIRED)
+        self.assertEqual(self.names(), ["Активированный уголь"])
+        self.assertEqual(self.kit.status_select.get(), ProductStatus.EXPIRED)
+
     def test_sorting_by_name(self):
         self.kit._on_sort("name")
         names = self.names()
         self.assertEqual(names, sorted(names, key=str.casefold))
-        self.assertEqual(self.kit._table._sorted, 0)
+        self.assertEqual(self.kit.table.sorted_column, 0)
 
     def test_sorting_by_date_added_has_no_arrow(self):
         self.kit._on_sort("added")
-        self.assertIsNone(self.kit._table._sorted)
+        self.assertIsNone(self.kit.table.sorted_column)
 
     def test_pagination(self):
         seed_bulk(self.db, self.app.user.id, count=20)
-        self.shell.navigate(sections.MY_KIT)
-        self.settle()
+        self.open(sections.MY_KIT)
         self.assertEqual(len(self.names()), PAGE_SIZE)
         first = self.names()
         self.kit._on_page(2)
@@ -102,64 +102,81 @@ class MyKitTest(KitTestCase):
         self.kit._on_page(4)
         self.assertEqual(len(self.names()), 28 - 3 * PAGE_SIZE)
 
+    def test_pagination_buttons_change_the_page(self):
+        seed_bulk(self.db, self.app.user.id, count=20)
+        self.open(sections.MY_KIT)
+        pagination = self.kit.pagination
+        click(pagination, pagination.cell_left(2) + 5, 10)  # кнопка «2»
+        self.settle()
+        self.assertEqual(self.kit._page, 2)
+
     def test_page_resets_after_filter(self):
         seed_bulk(self.db, self.app.user.id, count=20)
-        self.shell.navigate(sections.MY_KIT)
+        self.open(sections.MY_KIT)
         self.kit._on_page(3)
         self.kit._search_field.set("ибу")
         self.kit._apply_search()
         self.assertEqual(self.kit._page, 1)
 
+    def test_summary_counts_shown_rows(self):
+        self.assertEqual(self.kit.summary.text(), "Показано 1–8 из 8")
+
     def test_product_name_opens_card(self):
-        row = [c for c in self.kit._table._body.winfo_children() if c.winfo_children()][
-            0
-        ]
-        row.grid_slaves(column=0)[0].event_generate("<Button-1>")
+        first = self.kit.table.cell_widgets(0)[0]
+        click(first)
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductCardScreen)
+        self.assertIsInstance(self.page, ProductCardScreen)
 
     def test_add_button_opens_form(self):
         self.buttons("Добавить товар")[0].invoke()
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductFormScreen)
-        self.assertFalse(self.shell._current.editing)
+        self.assertIsInstance(self.page, ProductFormScreen)
+        self.assertFalse(self.page.editing)
 
     def test_empty_state_for_new_account(self):
         self.db.execute("DELETE FROM products")
-        self.shell.navigate(sections.MY_KIT)
-        self.settle()
-        texts = [w.cget("text") for w in find_all(self.kit, tk.Label)]
+        self.open(sections.MY_KIT)
+        texts = [w.text() for w in find_all(self.kit, QLabel)]
         self.assertIn("В аптечке пока пусто", texts)
         self.assertFalse(hasattr(self.kit, "_table"))
         self.buttons("Добавить товар")[0].invoke()
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductFormScreen)
+        self.assertIsInstance(self.page, ProductFormScreen)
 
-    def test_search_job_is_cancelled_when_screen_closes(self):
+    def test_pending_search_is_harmless_when_the_screen_closes(self):
         self.kit._on_search()
-        self.assertIsNotNone(self.kit._search_job)
-        self.shell.navigate(sections.HOME)
-        self.settle()
+        self.assertTrue(self.kit._search_timer.isActive())
+        self.open(sections.HOME)
+
+    def test_table_columns_line_up(self):
+        lefts = {
+            tuple(
+                cell.mapTo(self.kit, cell.rect().topLeft()).x()
+                for cell in self.kit.table.cell_widgets(0)
+            )
+        }
+        self.assertEqual(len(next(iter(lefts))), 8)
+        self.assertEqual(len(set(next(iter(lefts)))), 1)
 
 
 class ProductFormTest(KitTestCase):
     def open_form(self, product=None):
         self.shell.open_product_form(self.product_id(product) if product else None)
         self.settle()
-        return self.shell._current
+        return self.page
 
     def fill(self, form, **values):
         defaults = dict(name="Аспирин", quantity="3", min_quantity="1")
         defaults.update(values)
         for key, value in defaults.items():
-            form._fields[key].set(value)
+            form.fields[key].set(value)
 
     def test_add_product(self):
         form = self.open_form()
         self.fill(form, expiry_date="01.01.2030", storage_place="Шкаф", note="заметка")
         form._submit()
         self.settle()
-        self.assertIsInstance(self.shell._current, MyKitScreen)
+        self.assertIsInstance(self.page, MyKitScreen)
         self.assertIn("Аспирин", self.names())
         added = self.services.products.list_products(self.app.user.id, search="аспирин")
         self.assertEqual(added[0].product.note, "заметка")
@@ -167,16 +184,16 @@ class ProductFormTest(KitTestCase):
 
     def test_default_category_and_unit_are_chosen(self):
         form = self.open_form()
-        self.assertIsNotNone(form._fields["category_id"].get())
-        self.assertEqual(form._fields["unit"].get(), "упак.")
+        self.assertIsNotNone(form.fields["category_id"].get())
+        self.assertEqual(form.fields["unit"].get(), "упак.")
 
     def test_empty_name_shows_error_and_disables_save(self):
         form = self.open_form()
         self.fill(form, name="")
         form._submit()
-        self.assertEqual(form._fields["name"].error, "Введите название")
-        self.assertFalse(form._save.enabled)
-        self.assertIsInstance(self.shell._current, ProductFormScreen)
+        self.assertEqual(form.fields["name"].error, "Введите название")
+        self.assertFalse(form.save_button.enabled)
+        self.assertIsInstance(self.page, ProductFormScreen)
 
     def test_bad_values_are_marked_on_their_fields(self):
         cases = {
@@ -188,30 +205,26 @@ class ProductFormTest(KitTestCase):
             form = self.open_form()
             self.fill(form, **{key: value})
             form._submit()
-            self.assertIsNotNone(form._fields[key].error, key)
+            self.assertIsNotNone(form.fields[key].error, key)
 
     def test_save_is_enabled_again_after_fixing_the_field(self):
         form = self.open_form()
         self.fill(form, name="")
         form._submit()
-        self.assertFalse(form._save.enabled)
-        form._fields["name"].set("Аспирин")
-        form._fields["name"].clear_error()
+        self.assertFalse(form.save_button.enabled)
+        form.fields["name"].set("Аспирин")
+        form.fields["name"].clear_error()
         form._refresh_save()
-        self.assertTrue(form._save.enabled)
+        self.assertTrue(form.save_button.enabled)
 
     def test_typing_after_error_reenables_save(self):
         form = self.open_form()
         self.fill(form, name="")
         form._submit()
-        field = form._fields["name"]
-        field.entry.focus_force()
+        field = form.fields["name"]
+        field.entry.textEdited.emit("А")  # так Qt сообщает о правке пользователем
         self.settle()
-        field.entry.insert(0, "А")
-        field.entry.event_generate("<Key>", keysym="BackSpace")
-        field.entry.event_generate("<KeyRelease>", keysym="BackSpace")
-        self.settle()
-        self.assertTrue(form._save.enabled)
+        self.assertTrue(form.save_button.enabled)
 
     def test_edit_prefills_all_fields(self):
         form = self.open_form("Ибупрофен")
@@ -226,10 +239,10 @@ class ProductFormTest(KitTestCase):
 
     def test_edit_saves_and_opens_card(self):
         form = self.open_form("Ибупрофен")
-        form._fields["quantity"].set("10")
+        form.fields["quantity"].set("10")
         form._submit()
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductCardScreen)
+        self.assertIsInstance(self.page, ProductCardScreen)
         view = self.services.products.get_product(
             self.app.user.id, self.product_id("Ибупрофен")
         )
@@ -243,11 +256,11 @@ class ProductFormTest(KitTestCase):
         self.open_form()
         self.buttons("Отмена")[0].invoke()
         self.settle()
-        self.assertIsInstance(self.shell._current, MyKitScreen)
+        self.assertIsInstance(self.page, MyKitScreen)
         self.open_form("Ибупрофен")
         self.buttons("Отмена")[0].invoke()
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductCardScreen)
+        self.assertIsInstance(self.page, ProductCardScreen)
 
     def test_editing_deleted_product_returns_to_list(self):
         form = self.open_form("Ибупрофен")
@@ -256,17 +269,25 @@ class ProductFormTest(KitTestCase):
         )
         form._submit()
         self.settle()
-        self.assertIsInstance(self.shell._current, MyKitScreen)
+        self.assertIsInstance(self.page, MyKitScreen)
+
+    def test_multiline_note_is_saved(self):
+        form = self.open_form()
+        self.fill(form, note="первая строка\nвторая строка")
+        form._submit()
+        self.settle()
+        added = self.services.products.list_products(self.app.user.id, search="аспирин")
+        self.assertEqual(added[0].product.note, "первая строка\nвторая строка")
 
 
 class ProductCardTest(KitTestCase):
     def open_card(self, name="Ибупрофен"):
         self.shell.open_product(self.product_id(name))
         self.settle()
-        return self.shell._current
+        return self.page
 
     def texts(self, screen):
-        return [w.cget("text") for w in find_all(screen, tk.Label)]
+        return [w.text() for w in find_all(screen, QLabel)]
 
     def test_shows_product_data(self):
         card = self.open_card()
@@ -303,9 +324,16 @@ class ProductCardTest(KitTestCase):
         self.open_card()
         self.buttons("Редактировать")[0].invoke()
         self.settle()
-        form = self.shell._current
+        form = self.page
         self.assertIsInstance(form, ProductFormScreen)
         self.assertTrue(form.editing)
+
+    def test_back_link_returns_to_the_list(self):
+        card = self.open_card()
+        back = next(w for w in find_all(card, Link) if w.text() == "Назад к списку")
+        click(back)
+        self.settle()
+        self.assertIsInstance(self.page, MyKitScreen)
 
     def test_delete_asks_confirmation(self):
         self.open_card()
@@ -325,7 +353,7 @@ class ProductCardTest(KitTestCase):
         ]
         confirm.invoke()
         self.settle()
-        self.assertIsInstance(self.shell._current, MyKitScreen)
+        self.assertIsInstance(self.page, MyKitScreen)
         self.assertEqual(len(self.names_in_db()), 7)
         self.assertNotIn("Ибупрофен", self.names())
 

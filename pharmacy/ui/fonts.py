@@ -1,21 +1,20 @@
 """Шрифт Inter из макета: подключение файлов и выбор начертания.
 
-Файлы шрифта лежат в ``assets/fonts``. На Windows они подключаются только
-на время работы программы и не устанавливаются в систему. Если подключить
-шрифт не удалось (другая система или нет файлов), используется запасной.
+Файлы шрифта лежат в ``assets/fonts``. Они подключаются только на время работы
+программы и не устанавливаются в систему. Если подключить шрифт не удалось,
+используется запасной.
 """
 
-import ctypes
-import sys
-import tkinter as tk
+from functools import lru_cache
 from pathlib import Path
-from tkinter import font as tkfont
-from typing import Dict, Tuple
+from typing import Dict
 
-from pharmacy.ui.theme import TYPOGRAPHY, scaled
+from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+
+from pharmacy.ui import theme
+from pharmacy.ui.theme import TYPOGRAPHY
 
 FONTS_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
-_FR_PRIVATE = 0x10  # шрифт виден только этому процессу
 
 FONT_FILES = (
     "Inter-Regular.ttf",
@@ -25,59 +24,63 @@ FONT_FILES = (
     "Inter-ExtraBold.ttf",
 )
 
-# Насыщенность -> (имя семейства, толщина в терминах Tk). У промежуточных
-# начертаний Inter в Windows своё имя семейства.
-_INTER_FAMILIES: Dict[int, Tuple[str, str]] = {
-    400: ("Inter", "normal"),
-    500: ("Inter Medium", "normal"),
-    600: ("Inter SemiBold", "normal"),
-    700: ("Inter", "bold"),
-    800: ("Inter ExtraBold", "normal"),
+INTER = "Inter"
+# Насыщенность из макета -> толщина Qt. Qt собирает все файлы Inter в одно
+# семейство и выбирает нужный по толщине.
+_WEIGHTS: Dict[int, QFont.Weight] = {
+    400: QFont.Weight.Normal,
+    500: QFont.Weight.Medium,
+    600: QFont.Weight.DemiBold,
+    700: QFont.Weight.Bold,
+    800: QFont.Weight.ExtraBold,
 }
 _FALLBACK_FAMILY = "Segoe UI"
 
 
 def register_fonts() -> bool:
-    """Подключает файлы шрифта Inter к процессу.
+    """Подключает файлы шрифта Inter к программе.
 
     Returns:
-        True, если шрифты подключены. На системах кроме Windows и при
-        отсутствии файлов возвращает False (будет использован запасной шрифт).
+        True, если все шрифты подключены. Если файлов нет, возвращает False
+        (будет использован запасной шрифт).
     """
-    if sys.platform != "win32":
-        return False
     files = [FONTS_DIR / name for name in FONT_FILES]
     if not all(path.is_file() for path in files):
         return False
-    add_font = ctypes.windll.gdi32.AddFontResourceExW
-    return all(add_font(str(path), _FR_PRIVATE, 0) for path in files)
+    results = [QFontDatabase.addApplicationFont(str(path)) for path in files]
+    _font.cache_clear()
+    return all(result >= 0 for result in results)
 
 
-def font_spec(style: str, root: tk.Misc = None) -> Tuple[str, int, str]:
-    """Возвращает описание шрифта для виджета Tk.
+@lru_cache(maxsize=None)
+def _installed(family: str) -> bool:
+    return family in QFontDatabase.families()
 
-    Args:
-        style: Название стиля из ``theme.TYPOGRAPHY``.
-        root: Любой виджет (нужен, чтобы проверить, есть ли шрифт Inter).
 
-    Returns:
-        Тройка (семейство, размер, толщина). Размер отрицательный: так Tk
-        понимает пиксели, а не пункты, и текст совпадает с макетом.
-    """
+@lru_cache(maxsize=256)
+def _font(style: str, size_name: str) -> QFont:
     size, weight = TYPOGRAPHY[style]
-    size = scaled(size)
-    family, tk_weight = _INTER_FAMILIES[weight]
-    if root is not None and family not in tkfont.families(root):
+    family, qt_weight = INTER, _WEIGHTS[weight]
+    if not _installed(family):
         family = _FALLBACK_FAMILY
-        tk_weight = "bold" if weight >= 600 else "normal"
-    return family, -size, tk_weight
+        qt_weight = QFont.Weight.Bold if weight >= 600 else QFont.Weight.Normal
+    font = QFont(family)
+    font.setPixelSize(theme.scaled(size))
+    font.setWeight(qt_weight)
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    return font
 
 
-def text_width(widget: tk.Misc, text: str, style: str) -> int:
+def font(style: str) -> QFont:
+    """Возвращает шрифт стиля из ``theme.TYPOGRAPHY`` с учётом размера текста."""
+    return QFont(_font(style, theme.text_size_name()))
+
+
+def text_width(text: str, style: str) -> int:
     """Возвращает ширину текста в пикселях в заданном стиле."""
-    return tkfont.Font(widget, font=font_spec(style, widget)).measure(text)
+    return QFontMetrics(font(style)).horizontalAdvance(text)
 
 
-def line_height(widget: tk.Misc, style: str) -> int:
+def line_height(style: str) -> int:
     """Возвращает высоту строки текста в пикселях в заданном стиле."""
-    return tkfont.Font(widget, font=font_spec(style, widget)).metrics("linespace")
+    return QFontMetrics(font(style)).height()

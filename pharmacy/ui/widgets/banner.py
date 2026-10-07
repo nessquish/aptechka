@@ -1,77 +1,62 @@
 """Красная строка с сообщением об ошибке над формой («Неверный логин или пароль»)."""
 
-import tkinter as tk
+from typing import Optional
 
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+from pharmacy.ui.paint import begin, fill_rounded
+from pharmacy.ui.widgets.common import label
 from pharmacy.ui import theme
-from pharmacy.ui.drawing import rounded_box
-from pharmacy.ui.fonts import font_spec, line_height
 from pharmacy.ui.theme import SHADOW_PAD, palette
-from pharmacy.ui.widgets.common import parent_bg, photo
 
 PADDING_X = 10
 PADDING_Y = 8
 
 
-class ErrorBanner(tk.Canvas):
+class ErrorBanner(QWidget):
     """Сообщение об ошибке на розовой подложке. Пока текста нет, не занимает места."""
 
-    def __init__(self, master: tk.Misc) -> None:
+    def __init__(self, gap_below: int = 0, parent: Optional[QWidget] = None) -> None:
         """Создаёт скрытую плашку.
 
         Args:
-            master: Родительский виджет.
+            gap_below: Отступ под плашкой, пока она показана.
+            parent: Родитель.
         """
-        super().__init__(
-            master, bd=0, highlightthickness=0, bg=parent_bg(master), height=1
+        super().__init__(parent)
+        self._gap = gap_below
+        self._label = label("", "small", "red", wrap=True)
+        layout = QVBoxLayout(self)
+        # Края плашки совпадают с краями полей: у тех по бокам поле под тень.
+        layout.setContentsMargins(
+            SHADOW_PAD + PADDING_X,
+            PADDING_Y,
+            SHADOW_PAD + PADDING_X,
+            PADDING_Y + gap_below,
         )
-        self._text = ""
-        self._image = None
-        self._width = 0
-        self.bind("<Configure>", self._on_resize)
+        layout.addWidget(self._label)
+        self.setVisible(False)
 
     @property
     def text(self) -> str:
         """Показанный сейчас текст (пустой, если плашки не видно)."""
-        return self._text
+        return self._label.text()
 
-    def show(self, text: str) -> None:
+    def show_message(self, text: str) -> None:
         """Показывает сообщение."""
-        self._text = text
-        self._draw()
+        self._label.setText(text)
+        self.setVisible(bool(text))
 
-    def hide(self) -> None:
+    def hide_message(self) -> None:
         """Скрывает сообщение."""
-        self._text = ""
-        self._draw()
+        self.show_message("")
 
-    def _draw(self) -> None:
-        self.delete("all")
-        if not self._text or self._width <= 0:
-            self.configure(height=1)
-            return
-        pal = palette()
-        font = font_spec("small", self)
-        # Края плашки совпадают с краями полей: у тех по бокам поле под тень.
-        item = self.create_text(
-            SHADOW_PAD + PADDING_X,
-            PADDING_Y,
-            text=self._text,
-            anchor="nw",
-            fill=pal.red,
-            font=font,
-            width=self._width - 2 * (SHADOW_PAD + PADDING_X),
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        begin(painter)
+        box = QRectF(
+            SHADOW_PAD, 0, self.width() - 2 * SHADOW_PAD, self.height() - self._gap
         )
-        _, top, _, bottom = self.bbox(item)
-        height = max(bottom - top, line_height(self, "small")) + 2 * PADDING_Y
-        box = rounded_box(
-            self._width - 2 * SHADOW_PAD, height, theme.CONTROL_RADIUS, pal.red_bg
-        )
-        self._image = photo(box, self)
-        image = self.create_image(SHADOW_PAD, 0, image=self._image, anchor="nw")
-        self.tag_lower(image)
-        self.configure(height=height)
-
-    def _on_resize(self, event: tk.Event) -> None:
-        if event.width != self._width:
-            self._width = event.width
-            self._draw()
+        fill_rounded(painter, box, theme.CONTROL_RADIUS, palette().red_bg)

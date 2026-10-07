@@ -1,19 +1,18 @@
 """Иконки макета (линейный набор Lucide), нарисованные кодом.
 
 Каждая иконка описана набором простых фигур в квадрате 24 на 24. Из них
-Pillow рисует изображение нужного размера и цвета, файлов с картинками нет.
+собирается SVG нужного цвета и толщины, а Qt рисует его чётко в любом размере
+и на экранах с любой плотностью пикселей. Файлов с картинками нет.
 """
 
 from functools import lru_cache
-from typing import Dict, Iterator, List, Tuple, Union
+from typing import Dict, Tuple, Union
 
-from PIL import Image, ImageDraw
-from svg.path import Move, parse_path
-
-from pharmacy.ui.drawing import SCALE, rgba
+from PySide6.QtCore import QByteArray, QRectF, Qt
+from PySide6.QtGui import QGuiApplication, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 GRID = 24  # размер квадрата, в котором описаны иконки
-_CURVE_STEP = 0.25  # длина отрезка, на которые разбиваются кривые
 
 Path = Tuple[str, str]
 Circle = Tuple[str, float, float, float]
@@ -109,100 +108,62 @@ ICONS: Dict[str, Tuple[Primitive, ...]] = {
     ),
 }
 
-Point = Tuple[float, float]
+
+def _primitive_svg(primitive: Primitive, color: str) -> str:
+    """Переводит одну фигуру в тег SVG."""
+    kind = primitive[0]
+    if kind == "path":
+        return f'<path d="{primitive[1]}"/>'
+    if kind == "fill":
+        return f'<path d="{primitive[1]}" fill="{color}" stroke="none"/>'
+    if kind == "circle":
+        _, cx, cy, radius = primitive
+        return f'<circle cx="{cx}" cy="{cy}" r="{radius}"/>'
+    _, x, y, width, height, corner = primitive
+    return f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="{corner}"/>'
 
 
-def _subpaths(data: str) -> Iterator[List[Point]]:
-    """Разбивает контур SVG на ломаные линии (кривые режутся на отрезки)."""
-    current: List[Point] = []
-    for segment in parse_path(data):
-        if isinstance(segment, Move):
-            if len(current) > 1:
-                yield current
-            current = [(segment.end.real, segment.end.imag)]
-            continue
-        if not current:
-            current = [(segment.start.real, segment.start.imag)]
-        steps = max(2, round(segment.length() / _CURVE_STEP))
-        for index in range(1, steps + 1):
-            point = segment.point(index / steps)
-            current.append((point.real, point.imag))
-    if len(current) > 1:
-        yield current
-
-
-def _stroke(
-    draw: ImageDraw.ImageDraw,
-    points: List[Point],
-    color: Tuple[int, int, int, int],
-    width: float,
-) -> None:
-    """Рисует линию с круглыми концами и углами."""
-    flat = [(x, y) for x, y in points]
-    draw.line(flat, fill=color, width=round(width), joint="curve")
-    radius = width / 2
-    for x, y in (flat[0], flat[-1]):
-        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
-
-
-@lru_cache(maxsize=256)
-def render_icon(
-    name: str, size: int, color: str, stroke_width: float = 2.0
-) -> Image.Image:
-    """Рисует иконку.
-
-    Args:
-        name: Название иконки из ``ICONS``.
-        size: Сторона квадрата в пикселях.
-        color: Цвет ``#RRGGBB``.
-        stroke_width: Толщина линии в единицах сетки 24 на 24.
-
-    Returns:
-        Изображение RGBA размером size на size.
+def icon_svg(name: str, color: str, stroke_width: float = 2.0) -> str:
+    """Собирает SVG иконки.
 
     Raises:
         KeyError: Если такой иконки нет.
     """
-    primitives = ICONS[name]
-    unit = size * SCALE / GRID
-    paint = rgba(color)
-    line = stroke_width * unit
-    image = Image.new("RGBA", (size * SCALE, size * SCALE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    for primitive in primitives:
-        kind = primitive[0]
-        if kind in ("path", "fill"):
-            for points in _subpaths(primitive[1]):
-                scaled = [(x * unit, y * unit) for x, y in points]
-                if kind == "fill":
-                    draw.polygon(scaled, fill=paint)
-                else:
-                    _stroke(draw, scaled, paint, line)
-        elif kind == "circle":
-            _, cx, cy, radius = primitive
-            reach = (radius + stroke_width / 2) * unit
-            draw.ellipse(
-                (
-                    cx * unit - reach,
-                    cy * unit - reach,
-                    cx * unit + reach,
-                    cy * unit + reach,
-                ),
-                outline=paint,
-                width=round(line),
-            )
-        else:
-            _, x, y, width, height, corner = primitive
-            half = stroke_width / 2
-            draw.rounded_rectangle(
-                (
-                    (x - half) * unit,
-                    (y - half) * unit,
-                    (x + width + half) * unit,
-                    (y + height + half) * unit,
-                ),
-                (corner + half) * unit,
-                outline=paint,
-                width=round(line),
-            )
-    return image.resize((size, size), Image.Resampling.LANCZOS)
+    body = "".join(_primitive_svg(p, color) for p in ICONS[name])
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {GRID} {GRID}" '
+        f'fill="none" stroke="{color}" stroke-width="{stroke_width}" '
+        f'stroke-linecap="round" stroke-linejoin="round">{body}</svg>'
+    )
+
+
+@lru_cache(maxsize=512)
+def _render(
+    name: str, size: int, color: str, stroke_width: float, ratio: float
+) -> QPixmap:
+    renderer = QSvgRenderer(QByteArray(icon_svg(name, color, stroke_width).encode()))
+    pixmap = QPixmap(round(size * ratio), round(size * ratio))
+    pixmap.fill(Qt.GlobalColor.transparent)
+    pixmap.setDevicePixelRatio(ratio)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.end()
+    return pixmap
+
+
+def icon_pixmap(name: str, size: int, color: str, stroke_width: float = 2.0) -> QPixmap:
+    """Рисует иконку.
+
+    Args:
+        name: Название иконки из ``ICONS``.
+        size: Сторона квадрата в логических пикселях.
+        color: Цвет ``#RRGGBB``.
+        stroke_width: Толщина линии в единицах сетки 24 на 24.
+
+    Raises:
+        KeyError: Если такой иконки нет.
+    """
+    screen = QGuiApplication.primaryScreen()
+    ratio = screen.devicePixelRatio() if screen is not None else 1.0
+    return _render(name, size, color, stroke_width, ratio)

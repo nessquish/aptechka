@@ -4,13 +4,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from pharmacy.ui import fonts, sections, theme
+from pharmacy.ui import fonts, runtime, sections, theme
 from pharmacy.ui.preferences import Preferences
 from pharmacy.ui.screens.settings import SettingsScreen
 from pharmacy.ui.widgets.iconbutton import IconButton
-from tests.test_ui_shell import ShellTestCase, find_all
-from tests.test_ui_widgets import WidgetTestCase
+from tests.qt_helpers import ShellTestCase, click, find_all
 
 
 class PreferencesTest(unittest.TestCase):
@@ -117,14 +117,12 @@ class TextScaleTest(unittest.TestCase):
             theme.set_text_size("huge")
         self.assertEqual(theme.text_size_name(), "normal")
 
-    def test_font_spec_follows_the_size(self):
+    def test_font_follows_the_size(self):
         theme.set_text_size("normal")
-        normal = fonts.font_spec("body")[1]
+        normal = fonts.font("body").pixelSize()
         theme.set_text_size("large")
-        self.assertEqual(fonts.font_spec("body")[1], -theme.scaled(12))
-        self.assertLess(
-            fonts.font_spec("body")[1], normal
-        )  # размер отрицательный: пиксели
+        self.assertEqual(fonts.font("body").pixelSize(), theme.scaled(12))
+        self.assertGreater(fonts.font("body").pixelSize(), normal)
 
     def test_window_and_sidebar_grow_with_text(self):
         widths = []
@@ -141,28 +139,61 @@ class TextScaleTest(unittest.TestCase):
         theme.set_text_size("medium")
         self.assertEqual(theme.text_scale(), 1.25)
 
+    def test_text_gets_wider_with_the_size(self):
+        theme.set_text_size("normal")
+        normal = fonts.text_width("Список покупок", "body")
+        theme.set_text_size("large")
+        self.assertGreater(fonts.text_width("Список покупок", "body"), normal)
+
+
+class FontsTest(unittest.TestCase):
+    def test_inter_is_registered_from_the_bundled_files(self):
+        self.assertTrue(fonts.register_fonts())
+        self.assertEqual(fonts.font("body").family(), "Inter")
+
+    def test_every_weight_comes_from_inter_not_the_fallback(self):
+        for style, (_size, weight) in theme.TYPOGRAPHY.items():
+            font = fonts.font(style)
+            self.assertEqual(font.family(), "Inter", style)
+            self.assertEqual(int(font.weight()), weight, style)
+
+    def test_installed_inter_has_all_five_files(self):
+        from PySide6.QtGui import QFontDatabase
+
+        self.assertEqual(
+            QFontDatabase.styles("Inter"),
+            ["Regular", "Medium", "SemiBold", "Bold", "ExtraBold"],
+        )
+
+    def test_every_style_has_a_font(self):
+        for style in theme.TYPOGRAPHY:
+            self.assertGreater(fonts.font(style).pixelSize(), 0, style)
+            self.assertGreater(fonts.line_height(style), 0, style)
+
+    def test_missing_files_fall_back_gracefully(self):
+        with mock.patch.object(fonts, "FONTS_DIR", Path("нет/такой/папки")):
+            self.assertFalse(fonts.register_fonts())
+        fonts.register_fonts()
+
 
 class TextSizeInAppTest(ShellTestCase):
-    def tearDown(self):
-        theme.set_text_size("normal")
-
     def pick(self, index):
-        page = self.shell._current
-        page._text_size._on_click(
-            type("E", (), {"x": page._text_size._spans[index][0] + 5})()
-        )
+        switch = self.page.text_size_switch
+        left, right = switch.spans[index]
+        click(switch, (left + right) // 2, switch.height() // 2)
         self.settle()
 
     def open_settings(self):
-        self.shell.navigate(sections.SETTINGS)
-        self.settle()
+        self.open(sections.SETTINGS)
 
     def test_settings_offer_three_sizes(self):
         self.open_settings()
-        page = self.shell._current
+        page = self.page
         self.assertIsInstance(page, SettingsScreen)
-        self.assertEqual(page._text_size._items, ["Обычный", "Средний", "Большой"])
-        self.assertEqual(page._text_size.active, 0)
+        self.assertEqual(
+            page.text_size_switch._items, ["Обычный", "Средний", "Большой"]
+        )
+        self.assertEqual(page.text_size_switch.active, 0)
 
     def test_choice_applies_at_once_and_is_remembered(self):
         self.open_settings()
@@ -171,30 +202,34 @@ class TextSizeInAppTest(ShellTestCase):
         self.assertEqual(
             self.app.preferences.get(self.app.user.id, "text_size"), "large"
         )
-        self.assertEqual(self.app._screen.section, sections.SETTINGS)
-        self.assertEqual(self.app._screen._current._text_size.active, 2)
+        self.assertEqual(self.shell.section, sections.SETTINGS)
+        self.assertEqual(self.page.text_size_switch.active, 2)
 
     def test_window_widens_for_larger_text(self):
-        self.open_settings()
-        before = self.app.winfo_width()
-        self.pick(2)
-        self.assertGreater(self.app.winfo_width(), before)
-        self.assertGreaterEqual(
-            self.app.winfo_width(),
-            min(theme.window_width(), self.app.winfo_screenwidth() - 40),
-        )
+        with mock.patch.object(runtime, "screen_size", return_value=(2560, 1440)):
+            self.open_settings()
+            before = self.app.minimumWidth()
+            self.pick(2)
+            self.assertGreater(self.app.minimumWidth(), before)
+            self.assertGreaterEqual(self.app.width(), theme.window_width())
+
+    def test_window_never_exceeds_the_screen(self):
+        with mock.patch.object(runtime, "screen_size", return_value=(1280, 800)):
+            self.open_settings()
+            self.pick(2)
+            self.assertLessEqual(self.app.minimumWidth(), 1280 - 40)
 
     def test_text_really_gets_bigger(self):
-        before = fonts.font_spec("body", self.app)[1]
+        before = fonts.font("body").pixelSize()
         self.open_settings()
         self.pick(1)
-        self.assertLess(fonts.font_spec("body", self.app)[1], before)
+        self.assertGreater(fonts.font("body").pixelSize(), before)
 
     def test_selecting_the_same_size_does_nothing(self):
         self.open_settings()
-        shell = self.app._screen
+        shell = self.shell
         shell.set_text_size("normal")
-        self.assertIs(self.app._screen, shell)
+        self.assertIs(self.app.screen_widget, shell)
 
     def test_size_is_restored_at_the_next_sign_in(self):
         self.open_settings()
@@ -216,64 +251,62 @@ class TextSizeInAppTest(ShellTestCase):
     def test_every_screen_builds_at_the_largest_size(self):
         self.open_settings()
         self.pick(2)
-        shell = self.app._screen
         for name in sections.ALL:
-            shell.navigate(name)
-            self.settle()
-        shell.open_product_form()
+            self.open(name)
+        self.shell.open_product_form()
+        self.settle()
+        self.shell.open_product(1)
         self.settle()
 
 
 class SidebarCollapseTest(ShellTestCase):
     def collapse_button(self):
-        return [w for w in find_all(self.shell._sidebar, IconButton)][0]
+        return find_all(self.shell.sidebar, IconButton)[0]
 
     def test_sidebar_is_open_by_default(self):
         self.assertFalse(self.shell.sidebar_collapsed)
-        self.assertTrue(self.shell._sidebar.winfo_ismapped())
-        self.assertFalse(self.shell._rail.winfo_ismapped())
+        self.assertTrue(self.shell.sidebar.isVisible())
+        self.assertFalse(self.shell._rail.isVisible())
 
     def test_collapse_hides_the_sidebar_and_shows_the_rail(self):
-        self.collapse_button()._command()
+        click(self.collapse_button())
         self.settle()
         self.assertTrue(self.shell.sidebar_collapsed)
-        self.assertFalse(self.shell._sidebar.winfo_ismapped())
-        self.assertTrue(self.shell._rail.winfo_ismapped())
+        self.assertFalse(self.shell.sidebar.isVisible())
+        self.assertTrue(self.shell._rail.isVisible())
 
     def test_rail_button_expands_it_back(self):
         self.shell.set_sidebar_collapsed(True)
         self.settle()
-        rail_button = find_all(self.shell._rail, IconButton)[0]
-        rail_button._command()
+        click(find_all(self.shell._rail, IconButton)[0])
         self.settle()
         self.assertFalse(self.shell.sidebar_collapsed)
-        self.assertTrue(self.shell._sidebar.winfo_ismapped())
-        self.assertFalse(self.shell._rail.winfo_ismapped())
+        self.assertTrue(self.shell.sidebar.isVisible())
+        self.assertFalse(self.shell._rail.isVisible())
 
     def test_content_gets_the_freed_space(self):
-        before = self.shell._scroll.winfo_width()
+        before = self.shell._scroll.width()
         self.shell.set_sidebar_collapsed(True)
         self.settle()
-        self.assertGreater(self.shell._scroll.winfo_width(), before + 100)
+        self.assertGreater(self.shell._scroll.width(), before + 100)
 
     def test_choice_is_remembered_and_restored(self):
         self.shell.set_sidebar_collapsed(True)
         self.assertTrue(self.app.preferences.get(self.app.user.id, "sidebar_collapsed"))
         self.app.apply_user_changes(self.app.user, start=sections.HOME)
         self.settle()
-        self.assertTrue(self.app._screen.sidebar_collapsed)
-        self.assertTrue(self.app._screen._rail.winfo_ismapped())
+        self.assertTrue(self.shell.sidebar_collapsed)
+        self.assertTrue(self.shell._rail.isVisible())
 
     def test_collapsing_twice_changes_nothing(self):
         self.shell.set_sidebar_collapsed(True)
         self.shell.set_sidebar_collapsed(True)
         self.settle()
-        self.assertTrue(self.shell._rail.winfo_ismapped())
+        self.assertTrue(self.shell._rail.isVisible())
 
     def test_navigation_keeps_working_when_collapsed(self):
         self.shell.set_sidebar_collapsed(True)
-        self.shell.navigate(sections.HISTORY)
-        self.settle()
+        self.open(sections.HISTORY)
         self.assertEqual(self.shell.section, sections.HISTORY)
 
     def test_other_users_keep_their_own_state(self):
@@ -281,21 +314,5 @@ class SidebarCollapseTest(ShellTestCase):
         self.assertFalse(self.app.preferences.get(999, "sidebar_collapsed", False))
 
 
-class IconButtonTest(WidgetTestCase):
-    def test_click_runs_the_command(self):
-        calls = []
-        button = IconButton(self.root, "panel-left", lambda: calls.append(1))
-        button.pack()
-        self.settle()
-        button.event_generate("<Button-1>", x=5, y=5)
-        self.assertEqual(calls, [1])
-
-    def test_hover_changes_the_look(self):
-        button = IconButton(self.root, "panel-left", lambda: None)
-        button.pack()
-        self.settle()
-        quiet = len(button.find_all())
-        button.event_generate("<Enter>")
-        self.assertGreater(len(button.find_all()), quiet)
-        button.event_generate("<Leave>")
-        self.assertEqual(len(button.find_all()), quiet)
+if __name__ == "__main__":
+    unittest.main()

@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 from pharmacy import config, crashlog
-from pharmacy.ui.appicon import ICON_SIZES, render_app_icon
 
 
 class DataPathTest(unittest.TestCase):
@@ -80,28 +79,18 @@ class CrashLogTest(unittest.TestCase):
         self.assertIn("не запустилось", log.read_text(encoding="utf-8"))
 
     def test_message_window_failure_is_swallowed(self):
-        with mock.patch("tkinter.Tk", side_effect=RuntimeError("нет экрана")):
+        with mock.patch(
+            "PySide6.QtWidgets.QMessageBox.critical",
+            side_effect=RuntimeError("нет экрана"),
+        ):
             crashlog.show_message(Path("e.log"), ValueError("x"))
 
-
-class AppIconTest(unittest.TestCase):
-    def test_icon_has_requested_size_and_rounded_corners(self):
-        icon = render_app_icon(128)
-        self.assertEqual(icon.size, (128, 128))
-        self.assertEqual(icon.getpixel((0, 0))[3], 0)  # угол прозрачный
-        self.assertEqual(icon.getpixel((64, 10))[3], 255)  # середина закрашена
-
-    def test_cross_is_white_in_the_middle(self):
-        icon = render_app_icon(128)
-        self.assertEqual(icon.getpixel((64, 64))[:3], (255, 255, 255))
-
-    def test_ico_sizes_include_the_windows_standard_ones(self):
-        for size in (16, 32, 48, 256):
-            self.assertIn(size, ICON_SIZES)
-
-    def test_every_size_renders(self):
-        for size in ICON_SIZES:
-            self.assertEqual(render_app_icon(size).size, (size, size))
+    def test_message_window_shows_the_error_and_the_log_path(self):
+        with mock.patch("PySide6.QtWidgets.QMessageBox.critical") as box:
+            crashlog.show_message(Path("e.log"), ValueError("сломалось"))
+        text = box.call_args.args[2]
+        self.assertIn("сломалось", text)
+        self.assertIn("e.log", text)
 
 
 if __name__ == "__main__":

@@ -1,19 +1,21 @@
 """Мелкие элементы управления: вкладки, переключатели, чекбокс, пагинация."""
 
-import tkinter as tk
 from typing import Callable, List, Optional, Sequence, Tuple
 
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QSizePolicy, QWidget
+
+from pharmacy.ui.fonts import font, line_height, text_width
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import Shadow, begin, draw_shadows, fill_rounded, qcolor
 from pharmacy.ui import theme
-from pharmacy.ui.drawing import Shadow, rounded_box
-from pharmacy.ui.fonts import font_spec, line_height, text_width
-from pharmacy.ui.icons import render_icon
 from pharmacy.ui.theme import palette
-from pharmacy.ui.widgets.common import parent_bg, photo
 
 Callback = Callable[[int], None]
 
 
-class Segmented(tk.Canvas):
+class Segmented(QWidget):
     """Ряд вариантов, из которых выбран один.
 
     Два вида из макета: ``tabs`` (вкладки на серой подложке) и ``outline``
@@ -24,37 +26,38 @@ class Segmented(tk.Canvas):
 
     def __init__(
         self,
-        master: tk.Misc,
         items: Sequence[str],
         active: int = 0,
         on_change: Optional[Callback] = None,
         variant: str = "tabs",
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт переключатель.
 
         Args:
-            master: Родительский виджет.
             items: Подписи вариантов.
             active: Номер выбранного варианта.
             on_change: Вызывается с номером выбранного варианта.
             variant: ``tabs`` или ``outline``.
+
+        Raises:
+            ValueError: Если такого вида нет.
         """
-        super().__init__(master, bd=0, highlightthickness=0, bg=parent_bg(master))
+        super().__init__(parent)
         if variant not in ("tabs", "outline"):
             raise ValueError(f"Неизвестный вид переключателя: {variant}")
         self._variant = variant
         self._items = list(items)
         self._active = active
         self._on_change = on_change
-        self._images: list = []
-        self._spans: List[Tuple[int, int]] = []
         self._padding_x = 12 if variant == "tabs" else 14
         self._gap = 4 if variant == "tabs" else 0
         self._edge = 3 if variant == "tabs" else 1
-        self._height = line_height(self, "small") + 12 + 2 * self._edge
-        self.bind("<Button-1>", self._on_click)
-        self.configure(cursor="hand2")
-        self._draw()
+        self._height = line_height("small") + 12 + 2 * self._edge
+        self.spans: List[Tuple[int, int]] = []
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._relayout()
 
     @property
     def active(self) -> int:
@@ -64,97 +67,86 @@ class Segmented(tk.Canvas):
     def select(self, index: int) -> None:
         """Выбирает вариант без вызова обработчика."""
         self._active = index
-        self._draw()
+        self.update()
 
     def set_items(self, items: Sequence[str]) -> None:
         """Заменяет подписи (например, обновляет числа во вкладках)."""
         self._items = list(items)
-        self._draw()
+        self._relayout()
 
-    def _draw(self) -> None:
-        pal = palette()
-        self.delete("all")
-        self._images = []
-        widths = [
-            text_width(self, text, "small_medium") + 2 * self._padding_x
+    def _widths(self) -> List[int]:
+        return [
+            text_width(text, "small_medium") + 2 * self._padding_x
             for text in self._items
         ]
+
+    def _relayout(self) -> None:
+        widths = self._widths()
         total = sum(widths) + self._gap * (len(widths) - 1) + 2 * self._edge
-        self.configure(width=total + 2 * self.PAD, height=self._height + 2 * self.PAD)
-        radius = 8 if self._variant == "tabs" else theme.CONTROL_RADIUS
-        base = rounded_box(
-            total,
-            self._height,
-            radius,
-            pal.tabs_bg if self._variant == "tabs" else pal.input_bg,
-            None if self._variant == "tabs" else pal.line,
-            pad=self.PAD,
-        )
-        self._images.append(photo(base, self))
-        self.create_image(0, 0, image=self._images[0], anchor="nw")
-        self._spans = []
+        self.setFixedSize(total + 2 * self.PAD, self._height + 2 * self.PAD)
+        self.spans = []
         left = self.PAD + self._edge
+        for width in widths:
+            self.spans.append((left, left + width))
+            left += width + self._gap
+        self.update()
+
+    def sizeHint(self) -> QSize:
+        return self.size()
+
+    def paintEvent(self, _event) -> None:
+        pal = palette()
+        painter = QPainter(self)
+        begin(painter)
+        total = self.width() - 2 * self.PAD
+        base = QRectF(self.PAD, self.PAD, total, self._height)
+        if self._variant == "tabs":
+            fill_rounded(painter, base, 8, pal.tabs_bg)
+        else:
+            fill_rounded(painter, base, theme.CONTROL_RADIUS, pal.input_bg, pal.line)
         top = self.PAD + self._edge
         inner = self._height - 2 * self._edge
-        for index, (text, width) in enumerate(zip(self._items, widths)):
-            self._spans.append((left, left + width))
+        for index, ((left, right), text) in enumerate(zip(self.spans, self._items)):
             chosen = index == self._active
+            cell = QRectF(left, top, right - left, inner)
             if chosen:
-                self._draw_chosen(left, top, width, inner)
-            self.create_text(
-                left + width / 2,
-                top + inner / 2,
-                text=text,
-                fill=pal.primary_ink if chosen else pal.ink_2,
-                font=font_spec("small_medium" if chosen else "small", self),
-            )
-            left += width + self._gap
+                if self._variant == "tabs":
+                    draw_shadows(painter, cell, 6, (Shadow(1, 3, pal.shadow, 0.08),))
+                    fill_rounded(painter, cell, 6, pal.card)
+                else:
+                    fill_rounded(painter, cell, 6, pal.primary_soft)
+            painter.setFont(font("small_medium" if chosen else "small"))
+            painter.setPen(qcolor(pal.primary_ink if chosen else pal.ink_2))
+            painter.drawText(cell, Qt.AlignmentFlag.AlignCenter, text)
 
-    def _draw_chosen(self, left: int, top: int, width: int, height: int) -> None:
-        pal = palette()
-        if self._variant == "tabs":
-            fill, shadows, radius = pal.card, (Shadow(1, 3, pal.shadow, 0.08),), 6
-        else:
-            fill, shadows, radius = pal.primary_soft, (), 6
-        chip = rounded_box(width, height, radius, fill, shadows=shadows, pad=3)
-        self._images.append(photo(chip, self))
-        self.create_image(left - 3, top - 3, image=self._images[-1], anchor="nw")
-
-    def _on_click(self, event: tk.Event) -> None:
-        for index, (left, right) in enumerate(self._spans):
-            if left <= event.x < right and index != self._active:
+    def mousePressEvent(self, event) -> None:
+        x = event.position().x()
+        for index, (left, right) in enumerate(self.spans):
+            if left <= x < right and index != self._active:
                 self._active = index
-                self._draw()
+                self.update()
                 if self._on_change is not None:
                     self._on_change(index)
                 return
 
 
-class Toggle(tk.Canvas):
-    """Переключатель включено/выключено (34 на 19 пикселей)."""
-
-    WIDTH, HEIGHT, KNOB = 34, 19, 15
+class _Switch(QWidget):
+    """Основа для нажимаемых переключателей с состоянием «да/нет»."""
 
     def __init__(
         self,
-        master: tk.Misc,
-        value: bool = False,
-        on_change: Optional[Callable[[bool], None]] = None,
+        width: int,
+        height: int,
+        value: bool,
+        on_change: Optional[Callable[[bool], None]],
+        parent: Optional[QWidget],
     ) -> None:
-        super().__init__(
-            master,
-            bd=0,
-            highlightthickness=0,
-            bg=parent_bg(master),
-            width=self.WIDTH,
-            height=self.HEIGHT,
-            cursor="hand2",
-        )
+        super().__init__(parent)
         self._value = value
         self._on_change = on_change
-        self._images: list = []
-        self.bind("<Button-1>", self._on_click)
-        self._draw()
+        self.setFixedSize(width, height)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     @property
     def value(self) -> bool:
@@ -162,173 +154,157 @@ class Toggle(tk.Canvas):
         return self._value
 
     def set(self, value: bool) -> None:
-        """Включает или выключает без вызова обработчика."""
+        """Меняет состояние без вызова обработчика."""
         self._value = value
-        self._draw()
+        self.update()
 
-    def _draw(self) -> None:
-        pal = palette()
-        self.delete("all")
-        track = pal.primary if self._value else pal.checkbox_line
-        self._images = [
-            photo(rounded_box(self.WIDTH, self.HEIGHT, self.HEIGHT // 2, track), self),
-            photo(rounded_box(self.KNOB, self.KNOB, self.KNOB // 2, "#FFFFFF"), self),
-        ]
-        self.create_image(0, 0, image=self._images[0], anchor="nw")
-        inset = (self.HEIGHT - self.KNOB) // 2
-        left = self.WIDTH - inset - self.KNOB if self._value else inset
-        self.create_image(left, inset, image=self._images[1], anchor="nw")
+    def sizeHint(self) -> QSize:
+        return self.size()
 
-    def _on_click(self, _event: tk.Event) -> None:
+    def mousePressEvent(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
         self._value = not self._value
-        self._draw()
+        self.update()
         if self._on_change is not None:
             self._on_change(self._value)
 
 
-class Checkbox(tk.Canvas):
+class Toggle(_Switch):
+    """Переключатель включено/выключено (34 на 19 пикселей)."""
+
+    WIDTH, HEIGHT, KNOB = 34, 19, 15
+
+    def __init__(
+        self,
+        value: bool = False,
+        on_change: Optional[Callable[[bool], None]] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(self.WIDTH, self.HEIGHT, value, on_change, parent)
+
+    def paintEvent(self, _event) -> None:
+        pal = palette()
+        painter = QPainter(self)
+        begin(painter)
+        track = pal.primary if self._value else pal.checkbox_line
+        fill_rounded(
+            painter, QRectF(0, 0, self.WIDTH, self.HEIGHT), self.HEIGHT / 2, track
+        )
+        inset = (self.HEIGHT - self.KNOB) / 2
+        left = self.WIDTH - inset - self.KNOB if self._value else inset
+        fill_rounded(
+            painter, QRectF(left, inset, self.KNOB, self.KNOB), self.KNOB / 2, "#FFFFFF"
+        )
+
+
+class Checkbox(_Switch):
     """Флажок 14 на 14 пикселей с галочкой."""
 
     SIZE = 14
 
     def __init__(
         self,
-        master: tk.Misc,
         value: bool = False,
         on_change: Optional[Callable[[bool], None]] = None,
-        background: Optional[str] = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт флажок.
 
         Args:
-            master: Родительский виджет.
             value: Отмечен ли флажок.
             on_change: Вызывается с новым состоянием после нажатия.
-            background: Цвет под флажком, если он отличается от цвета родителя
-                (например, у флажка в шапке таблицы).
         """
-        super().__init__(
-            master,
-            bd=0,
-            highlightthickness=0,
-            bg=background or parent_bg(master),
-            width=self.SIZE,
-            height=self.SIZE,
-            cursor="hand2",
-        )
-        self._value = value
-        self._on_change = on_change
-        self._images: list = []
-        self.bind("<Button-1>", self._on_click)
-        self._draw()
+        super().__init__(self.SIZE, self.SIZE, value, on_change, parent)
 
-    @property
-    def value(self) -> bool:
-        """Отмечен ли флажок."""
-        return self._value
-
-    def set(self, value: bool) -> None:
-        """Ставит или снимает отметку без вызова обработчика."""
-        self._value = value
-        self._draw()
-
-    def _draw(self) -> None:
+    def paintEvent(self, _event) -> None:
         pal = palette()
-        self.delete("all")
+        painter = QPainter(self)
+        begin(painter)
+        box = QRectF(0, 0, self.SIZE, self.SIZE)
         if self._value:
-            box = rounded_box(self.SIZE, self.SIZE, 4, pal.primary)
+            fill_rounded(painter, box, 4, pal.primary)
+            painter.drawPixmap(2, 2, icon_pixmap("check", 10, "#FFFFFF", 3.5))
         else:
-            box = rounded_box(
-                self.SIZE, self.SIZE, 4, pal.input_bg, pal.checkbox_line, border_width=2
-            )
-        self._images = [photo(box, self)]
-        self.create_image(0, 0, image=self._images[0], anchor="nw")
-        if self._value:
-            self._images.append(photo(render_icon("check", 10, "#FFFFFF", 3.5), self))
-            self.create_image(
-                self.SIZE / 2, self.SIZE / 2, image=self._images[1], anchor="center"
-            )
-
-    def _on_click(self, _event: tk.Event) -> None:
-        self._value = not self._value
-        self._draw()
-        if self._on_change is not None:
-            self._on_change(self._value)
+            fill_rounded(painter, box, 4, pal.input_bg, pal.checkbox_line, 2)
 
 
-class Pagination(tk.Canvas):
+class Pagination(QWidget):
     """Кнопки страниц: стрелки и номера."""
 
     CELL, GAP = 24, 4
 
     def __init__(
         self,
-        master: tk.Misc,
         page: int,
         pages: int,
         on_change: Callback,
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт пагинацию.
 
         Args:
-            master: Родительский виджет.
             page: Номер текущей страницы (с 1).
             pages: Сколько всего страниц.
             on_change: Вызывается с номером выбранной страницы.
         """
-        super().__init__(master, bd=0, highlightthickness=0, bg=parent_bg(master))
+        super().__init__(parent)
         self._page = page
         self._pages = max(pages, 1)
         self._on_change = on_change
-        self._images: list = []
-        self._targets: List[Tuple[int, int]] = []
-        self.configure(cursor="hand2")
-        self.bind("<Button-1>", self._on_click)
-        self._draw()
+        cells = len(self._cells())
+        self.setFixedSize(cells * self.CELL + (cells - 1) * self.GAP, self.CELL)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def sizeHint(self) -> QSize:
+        return self.size()
+
+    @property
+    def page(self) -> int:
+        """Номер текущей страницы."""
+        return self._page
 
     def _cells(self) -> List[Tuple[str, int]]:
         numbers = [("page", n) for n in range(1, self._pages + 1)]
         return [("prev", self._page - 1)] + numbers + [("next", self._page + 1)]
 
-    def _draw(self) -> None:
+    def cell_left(self, index: int) -> int:
+        """Левый край ячейки по порядку (0 это стрелка «назад»)."""
+        return index * (self.CELL + self.GAP)
+
+    def paintEvent(self, _event) -> None:
         pal = palette()
-        self.delete("all")
-        self._images = []
-        self._targets = []
-        cells = self._cells()
-        size = self.CELL
-        self.configure(
-            width=len(cells) * size + (len(cells) - 1) * self.GAP, height=size
-        )
-        for index, (kind, target) in enumerate(cells):
-            left = index * (size + self.GAP)
+        painter = QPainter(self)
+        begin(painter)
+        for index, (kind, target) in enumerate(self._cells()):
+            cell = QRectF(self.cell_left(index), 0, self.CELL, self.CELL)
             current = kind == "page" and target == self._page
             enabled = 1 <= target <= self._pages
             if current:
-                box = rounded_box(size, size, 6, pal.primary, pal.primary)
+                fill_rounded(painter, cell, 6, pal.primary, pal.primary)
             else:
-                box = rounded_box(size, size, 6, pal.input_bg, pal.line)
-            self._images.append(photo(box, self))
-            self.create_image(left, 0, image=self._images[-1], anchor="nw")
-            center = (left + size / 2, size / 2)
+                fill_rounded(painter, cell, 6, pal.input_bg, pal.line)
             if kind == "page":
-                self.create_text(
-                    *center,
-                    text=str(target),
-                    fill=pal.on_primary if current else pal.ink_2,
-                    font=font_spec("small", self),
-                )
+                painter.setFont(font("small"))
+                painter.setPen(qcolor(pal.on_primary if current else pal.ink_2))
+                painter.drawText(cell, Qt.AlignmentFlag.AlignCenter, str(target))
             else:
                 name = "chevron-left" if kind == "prev" else "chevron-right"
-                colour = pal.ink_2 if enabled else pal.checkbox_line
-                self._images.append(photo(render_icon(name, 14, colour), self))
-                self.create_image(*center, image=self._images[-1], anchor="center")
-            self._targets.append((left, target if enabled else 0))
+                color = pal.ink_2 if enabled else pal.checkbox_line
+                painter.drawPixmap(
+                    round(cell.center().x() - 7),
+                    round(cell.center().y() - 7),
+                    icon_pixmap(name, 14, color),
+                )
 
-    def _on_click(self, event: tk.Event) -> None:
-        for left, target in self._targets:
-            if left <= event.x < left + self.CELL and target and target != self._page:
+    def mousePressEvent(self, event) -> None:
+        x = event.position().x()
+        for index, (kind, target) in enumerate(self._cells()):
+            left = self.cell_left(index)
+            enabled = 1 <= target <= self._pages
+            if left <= x < left + self.CELL and enabled and target != self._page:
                 self._page = target
-                self._draw()
+                self.update()
                 self._on_change(target)
                 return

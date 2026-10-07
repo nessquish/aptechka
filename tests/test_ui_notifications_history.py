@@ -1,25 +1,21 @@
 """Тесты экранов «Уведомления» и «История», периодов и прокрутки."""
 
-import tkinter as tk
 import unittest
 from datetime import date, datetime, timedelta
 from typing import List
 
+from PySide6.QtWidgets import QLabel, QWidget
+
 from pharmacy.models import HistoryAction, NotificationKind
 from pharmacy.ui import periods, sections
-from pharmacy.ui.screens.history import (
-    HistoryScreen,
-    day_title,
-    group_by_day,
-)
+from pharmacy.ui.screens.history import HistoryScreen, day_title, group_by_day
 from pharmacy.ui.screens.notifications import NotificationsScreen, _when
 from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.theme import SHADOW_PAD
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.scroll import ScrollArea
-from tests.test_ui_shell import ShellTestCase, find_all
-from tests.test_ui_widgets import WidgetTestCase
+from tests.qt_helpers import ShellTestCase, WidgetTestCase, click, find_all
 
 
 class PeriodsTest(unittest.TestCase):
@@ -71,12 +67,11 @@ class HelpersTest(unittest.TestCase):
 class NotificationsTest(ShellTestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.shell.navigate(sections.NOTIFICATIONS)
-        self.settle()
+        self.open(sections.NOTIFICATIONS)
 
     @property
-    def page(self) -> NotificationsScreen:
-        return self.shell._current
+    def notifications_page(self) -> NotificationsScreen:
+        return self.page
 
     def notifications(self):
         return self.services.notifications.list_notifications(self.app.user.id)
@@ -88,13 +83,12 @@ class NotificationsTest(ShellTestCase):
             "Низкий остаток",
         }
         return [
-            w.cget("text")
-            for w in find_all(self.page._card, tk.Label)
-            if w.cget("text") in names
+            w.text() for w in find_all(self.page._card, QLabel) if w.text() in names
         ]
 
     def test_lists_all_notifications(self):
         self.assertEqual(len(self.titles()), len(self.notifications()))
+        self.assertEqual(len(self.page.rows), len(self.notifications()))
 
     def test_tab_labels_have_counts(self):
         total = len(self.notifications())
@@ -119,9 +113,10 @@ class NotificationsTest(ShellTestCase):
         self.assertEqual(self.services.notifications.count_unread(self.app.user.id), 0)
         self.assertTrue(self.page._tab_labels()[1].endswith("· 0"))
         self.page._on_tab(1)
+        self.settle()
         self.assertEqual(self.titles(), [])
         self.assertIn(
-            "Уведомлений нет", [w.cget("text") for w in find_all(self.page, tk.Label)]
+            "Уведомлений нет", [w.text() for w in find_all(self.page, QLabel)]
         )
 
     def test_unread_tab_hides_read_items(self):
@@ -141,9 +136,25 @@ class NotificationsTest(ShellTestCase):
         self.page._on_period(periods.ALL_TIME)
         self.assertIn(first.id, [n.id for n in self.page._visible()])
 
+    def test_period_select_changes_the_list(self):
+        self.page.period_select._pick(periods.TODAY)
+        self.assertEqual(self.page._period, periods.TODAY)
+
     def test_delete_removes_one_notification(self):
         before = len(self.notifications())
         self.page._delete(self.notifications()[0].id)
+        self.assertEqual(len(self.notifications()), before - 1)
+
+    def test_close_cross_deletes_the_notification(self):
+        before = len(self.notifications())
+        row = self.page.rows[0]
+        cross = [
+            w
+            for w in row.findChildren(QLabel)
+            if w.pixmap() is not None and not w.pixmap().isNull()
+        ][-1]
+        click(cross)
+        self.settle()
         self.assertEqual(len(self.notifications()), before - 1)
 
     def test_delete_of_missing_notification_is_ignored(self):
@@ -153,7 +164,7 @@ class NotificationsTest(ShellTestCase):
         target = self.notifications()[0]
         self.buttons("Открыть товар")[0].invoke()
         self.settle()
-        self.assertIsInstance(self.shell._current, ProductCardScreen)
+        self.assertIsInstance(self.page, ProductCardScreen)
         refreshed = self.services.notifications.list_notifications(self.app.user.id)
         self.assertTrue(next(n for n in refreshed if n.id == target.id).is_read)
 
@@ -169,24 +180,34 @@ class NotificationsTest(ShellTestCase):
 
     def test_action_columns_are_aligned_in_every_row(self):
         # В демо-данных есть и строки с кнопкой, и строки с плашкой «В списке».
-        opens = [b for b in find_all(self.page, Button) if b.text == "Открыть товар"]
+        opens = [b for b in find_all(self.page, Button) if b.text() == "Открыть товар"]
         self.assertGreater(len(opens), 2)
-        self.assertEqual({b.winfo_rootx() for b in opens}, {opens[0].winfo_rootx()})
-        self.assertEqual({b.winfo_width() for b in opens}, {opens[0].winfo_width()})
+        lefts = {b.mapTo(self.page, b.rect().topLeft()).x() for b in opens}
+        self.assertEqual(len(lefts), 1)
+        self.assertEqual({b.width() for b in opens}, {opens[0].width()})
         buttons = [
-            b for b in find_all(self.page, Button) if b.text == "В список покупок"
+            b for b in find_all(self.page, Button) if b.text() == "В список покупок"
         ]
-        badges = [w for w in find_all(self.page, Badge)]
+        badges = [w for w in find_all(self.page, Badge) if w.text == "В списке покупок"]
         self.assertTrue(buttons and badges)
         # Видимый левый край кнопки смещён внутрь на поле под тень.
-        edges = {b.winfo_rootx() + SHADOW_PAD for b in buttons}
-        edges |= {w.winfo_rootx() for w in badges}
+        edges = {
+            b.mapTo(self.page, b.rect().topLeft()).x() + SHADOW_PAD for b in buttons
+        }
+        edges |= {w.mapTo(self.page, w.rect().topLeft()).x() for w in badges}
         self.assertEqual(len(edges), 1)
 
     def test_sidebar_counter_follows_reading(self):
         self.buttons("Прочитать все")[0].invoke()
         self.settle()
-        self.assertEqual(self.shell._sidebar._items[sections.NOTIFICATIONS]._count, 0)
+        self.assertEqual(self.shell.sidebar.item(sections.NOTIFICATIONS).count, 0)
+
+    def test_unread_rows_have_a_dot_read_rows_do_not(self):
+        first = self.page.rows[0]
+        self.assertIsNotNone(first._dot)
+        self.buttons("Прочитать все")[0].invoke()
+        self.settle()
+        self.assertTrue(all(row._dot is None for row in self.page.rows))
 
 
 class HistoryTest(ShellTestCase):
@@ -200,104 +221,105 @@ class HistoryTest(ShellTestCase):
                 HistoryAction.PRODUCT_ADDED,
             ),
         )
-        self.shell.navigate(sections.HISTORY)
-        self.settle()
+        self.open(sections.HISTORY)
 
     @property
-    def page(self) -> HistoryScreen:
-        return self.shell._current
+    def history(self) -> HistoryScreen:
+        return self.page
 
     def descriptions(self) -> List[str]:
-        return [r.description for r in self.page._records()]
+        return [r.description for r in self.history._records()]
 
     def test_default_period_is_week(self):
         for description in self.descriptions():
             self.assertNotIn("добавлен в аптечку", description)
 
     def test_all_time_shows_old_records(self):
-        self.page._on_period(periods.ALL_TIME)
+        self.history._on_period(periods.ALL_TIME)
         self.assertTrue(any("добавлен в аптечку" in d for d in self.descriptions()))
 
     def test_action_filter(self):
-        self.page._on_period(periods.ALL_TIME)
-        self.page._on_action(HistoryAction.PRODUCT_ADDED)
-        records = self.page._records()
+        self.history._on_period(periods.ALL_TIME)
+        self.history._on_action(HistoryAction.PRODUCT_ADDED)
+        records = self.history._records()
         self.assertTrue(records)
         self.assertEqual({r.action for r in records}, {HistoryAction.PRODUCT_ADDED})
 
+    def test_selects_apply_their_values(self):
+        self.history.action_select._pick(HistoryAction.PRODUCT_ADDED)
+        self.history.period_select._pick(periods.ALL_TIME)
+        self.assertEqual(len(self.history.event_rows), len(self.history._records()))
+
     def test_search_by_product_name(self):
-        self.page._on_period(periods.ALL_TIME)
-        self.page._search.set("ПАРАЦЕТАМОЛ")
-        self.page._apply_search()
+        self.history._on_period(periods.ALL_TIME)
+        self.history._search.set("ПАРАЦЕТАМОЛ")
+        self.history._apply_search()
         self.assertTrue(self.descriptions())
         for description in self.descriptions():
             self.assertIn("парацетамол", description.casefold())
 
     def test_nothing_found_message(self):
-        self.page._search.set("zzzz")
-        self.page._apply_search()
-        texts = [w.cget("text") for w in find_all(self.page, tk.Label)]
+        self.history._search.set("zzzz")
+        self.history._apply_search()
+        self.settle()
+        texts = [w.text() for w in find_all(self.history, QLabel)]
         self.assertIn("Записей нет", texts)
 
     def test_groups_are_titled_by_day(self):
-        texts = [w.cget("text") for w in find_all(self.page, tk.Label)]
-        self.assertIn(day_title(date.today()), texts)
+        self.assertIn(day_title(date.today()), self.history.day_titles)
 
     def test_event_shows_time_and_title(self):
-        texts = [w.cget("text") for w in find_all(self.page, tk.Label)]
+        texts = [w.text() for w in find_all(self.history, QLabel)]
         self.assertTrue(
             any(t in texts for t in ("Изменение товара", "Удаление товара"))
         )
         self.assertTrue(any(len(t) == 5 and t[2] == ":" for t in texts))
 
-    def test_search_job_is_cancelled_on_close(self):
-        self.page._on_search()
-        self.assertIsNotNone(self.page._job)
-        self.shell.navigate(sections.HOME)
-        self.settle()
+    def test_pending_search_is_harmless_when_the_screen_closes(self):
+        self.history._on_search()
+        self.assertTrue(self.history._timer.isActive())
+        self.open(sections.HOME)
 
 
 class ScrollAreaTest(WidgetTestCase):
     def make(self, content_height: int) -> ScrollArea:
-        self.root.geometry("300x200+0+0")
-        area = ScrollArea(self.root)
-        area.pack(fill="both", expand=True)
-        tk.Frame(area.body, height=content_height, bg="white").pack(fill="x")
+        self.root.resize(300, 200)
+        area = ScrollArea(parent=self.root)
+        area.resize(300, 200)
+        content = QWidget()
+        content.setFixedHeight(content_height)
+        area.body.addWidget(content)
+        area.show()
         self.settle()
         return area
 
     def test_short_content_does_not_scroll(self):
         area = self.make(50)
-        self.assertEqual(area._overflow(), 0)
-        area._on_wheel(type("E", (), {"delta": -120})())
-        self.assertEqual(area._canvas.canvasy(0), 0)
-        self.assertEqual(area._bar.find_all(), ())
+        self.assertEqual(area.verticalScrollBar().maximum(), 0)
 
-    def test_long_content_scrolls_with_wheel(self):
+    def test_long_content_scrolls(self):
         area = self.make(600)
-        self.assertGreater(area._overflow(), 0)
-        self.assertTrue(area._bar.find_all())
-        area._on_wheel(type("E", (), {"delta": -120})())
-        self.assertGreater(area._canvas.canvasy(0), 0)
-        area._on_wheel(type("E", (), {"delta": 120})())
-        self.assertEqual(area._canvas.canvasy(0), 0)
+        bar = area.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        bar.setValue(30)
+        self.assertEqual(bar.value(), 30)
 
     def test_cannot_scroll_past_the_end(self):
         area = self.make(300)
-        for _ in range(50):
-            area._on_wheel(type("E", (), {"delta": -120})())
-        self.assertAlmostEqual(area._canvas.canvasy(0), area._overflow(), delta=1)
+        bar = area.verticalScrollBar()
+        bar.setValue(10_000)
+        self.assertEqual(bar.value(), bar.maximum())
 
-    def test_dragging_the_thumb(self):
+    def test_wheel_step_is_a_few_lines(self):
         area = self.make(600)
-        top, bottom = area._thumb_span()
-        press = type("E", (), {"y": (top + bottom) / 2})()
-        area._on_bar_press(press)
-        area._on_bar_drag(type("E", (), {"y": (top + bottom) / 2 + 40})())
-        self.assertGreater(area._canvas.canvasy(0), 0)
+        self.assertEqual(area.verticalScrollBar().singleStep(), 14)
 
     def test_scroll_to_top(self):
         area = self.make(600)
-        area._on_wheel(type("E", (), {"delta": -120})())
+        area.verticalScrollBar().setValue(80)
         area.scroll_to_top()
-        self.assertEqual(area._canvas.canvasy(0), 0)
+        self.assertEqual(area.verticalScrollBar().value(), 0)
+
+    def test_no_horizontal_bar(self):
+        area = self.make(600)
+        self.assertFalse(area.horizontalScrollBar().isVisible())

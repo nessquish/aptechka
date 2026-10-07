@@ -1,16 +1,26 @@
 """Боковое меню: разделы, счётчик уведомлений, пользователь и выход."""
 
-import tkinter as tk
-from typing import Callable, Dict, Sequence
+from typing import Callable, Dict, Optional, Sequence
+
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QFrame,
+    QHBoxLayout,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from pharmacy.models import User
-from pharmacy.ui import theme
-from pharmacy.ui.drawing import Shadow, rounded_box
-from pharmacy.ui.fonts import font_spec, line_height, text_width
-from pharmacy.ui.icons import render_icon
-from pharmacy.ui.theme import mix, palette
-from pharmacy.ui.widgets.common import parent_bg, photo
+from pharmacy.ui.fonts import font, line_height, text_width
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import Shadow, begin, draw_shadows, fill_rounded, qcolor
+from pharmacy.ui.widgets.common import label
 from pharmacy.ui.widgets.iconbutton import IconButton
+from pharmacy.ui import theme
+from pharmacy.ui.theme import mix, palette
 
 NAV_RADIUS = 10
 NAV_PAD = 3  # поле под тень выбранного пункта
@@ -19,150 +29,216 @@ NAV_PADDING_Y = 9
 COUNTER_PADDING_X = 7
 COUNTER_PADDING_Y = 1
 AVATAR_SIZE = 26
+LINK_ICON = 14
+LINK_GAP = 8
 
 
-class NavItem(tk.Canvas):
+class NavItem(QAbstractButton):
     """Пункт меню: название, выделение выбранного и необязательный счётчик."""
 
-    def __init__(self, master: tk.Misc, text: str, command: Callable[[], None]) -> None:
-        super().__init__(
-            master, bd=0, highlightthickness=0, bg=parent_bg(master), cursor="hand2"
-        )
-        self._text = text
-        self._command = command
+    def __init__(
+        self,
+        text: str,
+        command: Callable[[], None],
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setText(text)
         self._active = False
-        self._hover = False
         self._count = 0
-        self._width = 0
-        self._images: list = []
-        self._height = line_height(self, "body") + 2 * NAV_PADDING_Y
-        self.configure(height=self._height + 2 * NAV_PAD)
-        self.bind("<Configure>", self._on_resize)
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<Button-1>", lambda _event: self._command())
+        self._height = line_height("body") + 2 * NAV_PADDING_Y
+        self.setFixedHeight(self._height + 2 * NAV_PAD)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(lambda _checked=False: command())
+
+    @property
+    def active(self) -> bool:
+        """Выбран ли пункт."""
+        return self._active
+
+    @property
+    def count(self) -> int:
+        """Число на счётчике справа (0 если счётчика нет)."""
+        return self._count
 
     def set_active(self, active: bool) -> None:
         """Выделяет пункт как выбранный или снимает выделение."""
         self._active = active
-        self._draw()
+        self.update()
 
     def set_count(self, count: int) -> None:
         """Показывает счётчик справа (0 скрывает его)."""
         self._count = count
-        self._draw()
+        self.update()
 
-    def _on_resize(self, event: tk.Event) -> None:
-        if event.width != self._width:
-            self._width = event.width
-            self._draw()
+    def sizeHint(self) -> QSize:
+        return QSize(100, self._height + 2 * NAV_PAD)
 
-    def _on_enter(self, _event: tk.Event) -> None:
-        self._hover = True
-        self._draw()
-
-    def _on_leave(self, _event: tk.Event) -> None:
-        self._hover = False
-        self._draw()
-
-    def _draw(self) -> None:
-        if self._width <= 2 * NAV_PAD:
-            return
+    def paintEvent(self, _event) -> None:
         pal = palette()
-        self.delete("all")
-        self._images = []
-        body = self._width - 2 * NAV_PAD
+        painter = QPainter(self)
+        begin(painter)
+        body = QRectF(NAV_PAD, NAV_PAD, self.width() - 2 * NAV_PAD, self._height)
         if self._active:
             fill, ink, style = pal.primary_soft, pal.primary_ink, "body_strong"
-            shadows = (Shadow(2, 6, pal.primary, 0.18),)
+            draw_shadows(painter, body, NAV_RADIUS, (Shadow(2, 6, pal.primary, 0.18),))
+            fill_rounded(painter, body, NAV_RADIUS, fill)
         else:
-            fill = mix(pal.side, pal.primary_soft, 0.5) if self._hover else None
-            ink, style, shadows = pal.ink_2, "body", ()
-        if fill is not None:
-            box = rounded_box(
-                body, self._height, NAV_RADIUS, fill, shadows=shadows, pad=NAV_PAD
-            )
-            self._images.append(photo(box, self))
-            self.create_image(0, 0, image=self._images[-1], anchor="nw")
-        middle = NAV_PAD + self._height / 2
-        self.create_text(
-            NAV_PAD + NAV_PADDING_X,
-            middle,
-            text=self._text,
-            anchor="w",
-            fill=ink,
-            font=font_spec(style, self),
+            ink, style = pal.ink_2, "body"
+            if self.underMouse():
+                fill_rounded(
+                    painter, body, NAV_RADIUS, mix(pal.side, pal.primary_soft, 0.5)
+                )
+        painter.setFont(font(style))
+        painter.setPen(qcolor(ink))
+        painter.drawText(
+            QRectF(NAV_PAD + NAV_PADDING_X, body.top(), body.width(), body.height()),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self.text(),
         )
         if self._count:
-            self._draw_counter(middle)
+            self._paint_counter(painter, body)
 
-    def _draw_counter(self, middle: float) -> None:
+    def _paint_counter(self, painter: QPainter, body: QRectF) -> None:
         pal = palette()
-        label = str(self._count)
-        width = text_width(self, label, "counter") + 2 * COUNTER_PADDING_X
-        height = line_height(self, "counter") + 2 * COUNTER_PADDING_Y
-        right = self._width - NAV_PAD - NAV_PADDING_X
-        self._images.append(
-            photo(rounded_box(width, height, theme.BADGE_RADIUS, pal.primary), self)
-        )
-        self.create_image(right, middle, image=self._images[-1], anchor="e")
-        self.create_text(
-            right - width / 2,
-            middle,
-            text=label,
-            fill=pal.on_primary,
-            font=font_spec("counter", self),
+        text = str(self._count)
+        width = text_width(text, "counter") + 2 * COUNTER_PADDING_X
+        height = line_height("counter") + 2 * COUNTER_PADDING_Y
+        right = self.width() - NAV_PAD - NAV_PADDING_X
+        chip = QRectF(right - width, body.center().y() - height / 2, width, height)
+        fill_rounded(painter, chip, theme.BADGE_RADIUS, pal.primary)
+        painter.setFont(font("counter"))
+        painter.setPen(qcolor(pal.on_primary))
+        painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+
+class _Avatar(QWidget):
+    """Круг с первой буквой имени пользователя."""
+
+    def __init__(self, letter: str) -> None:
+        super().__init__()
+        self._letter = letter
+        self.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
+
+    def paintEvent(self, _event) -> None:
+        pal = palette()
+        painter = QPainter(self)
+        begin(painter)
+        box = QRectF(0, 0, AVATAR_SIZE, AVATAR_SIZE)
+        fill_rounded(painter, box, AVATAR_SIZE / 2, pal.primary)
+        painter.setFont(font("counter"))
+        painter.setPen(qcolor(pal.on_primary))
+        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, self._letter)
+
+
+class _FooterLink(QAbstractButton):
+    """Строка внизу меню: значок и подпись, нажатие вызывает команду."""
+
+    def __init__(
+        self, text: str, icon: str, color: str, command: Callable[[], None]
+    ) -> None:
+        super().__init__()
+        self.setText(text)
+        self._icon = icon
+        self._color = color
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(max(line_height("body"), LINK_ICON) + 8)
+        self.clicked.connect(lambda _checked=False: command())
+
+    def sizeHint(self) -> QSize:
+        return QSize(100, self.height())
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        begin(painter)
+        top = round((self.height() - LINK_ICON) / 2)
+        painter.drawPixmap(0, top, icon_pixmap(self._icon, LINK_ICON, self._color))
+        painter.setFont(font("body"))
+        painter.setPen(qcolor(self._color))
+        painter.drawText(
+            QRectF(LINK_ICON + LINK_GAP, 0, self.width(), self.height()),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self.text(),
         )
 
 
-class Sidebar(tk.Frame):
+class _Line(QWidget):
+    """Тонкая горизонтальная линия."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedHeight(1)
+
+    def paintEvent(self, _event) -> None:
+        QPainter(self).fillRect(self.rect(), palette().line)
+
+
+class Sidebar(QFrame):
     """Левая панель: название, разделы, пользователь и кнопка выхода."""
 
     def __init__(
         self,
-        master: tk.Misc,
         user: User,
         sections: Sequence[str],
         on_select: Callable[[str], None],
         on_logout: Callable[[], None],
         on_toggle_theme: Callable[[], None],
         on_collapse: Callable[[], None],
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Создаёт меню.
 
         Args:
-            master: Родительский виджет.
             user: Вошедший пользователь (имя и логин внизу).
             sections: Названия разделов сверху вниз.
             on_select: Вызывается с названием раздела при нажатии.
             on_logout: Вызывается при нажатии на «Выход».
             on_toggle_theme: Вызывается при нажатии на «Тёмная/Светлая тема».
             on_collapse: Вызывается при нажатии на кнопку сворачивания панели.
+            parent: Родитель.
         """
+        super().__init__(parent)
         pal = palette()
-        self._footer_icons: list = []
-        super().__init__(master, bg=pal.side, width=theme.sidebar_width())
-        self.pack_propagate(False)
-        tk.Frame(self, bg=pal.line, width=1).pack(side="right", fill="y")
-        inner = tk.Frame(self, bg=pal.side)
-        inner.pack(fill="both", expand=True, padx=(14 - NAV_PAD, 14 - NAV_PAD))
-        header = tk.Frame(inner, bg=pal.side)
-        header.pack(fill="x", padx=(NAV_PAD + 4, NAV_PAD), pady=(18, 22))
-        tk.Label(
-            header,
-            text="Моя аптечка",
-            bg=pal.side,
-            fg=pal.brand_ink,
-            font=font_spec("sidebar_title", self),
-            padx=0,
-        ).pack(side="left")
-        IconButton(header, "panel-left", on_collapse).pack(side="right")
+        self.setFixedWidth(theme.sidebar_width())
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.setAutoFillBackground(True)
+        colors = self.palette()
+        colors.setColor(colors.ColorRole.Window, qcolor(pal.side))
+        self.setPalette(colors)
+        self.backdrop_color = pal.side
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14 - NAV_PAD, 0, 14 - NAV_PAD + 1, 0)
+        outer.setSpacing(0)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(NAV_PAD + 4, 18, NAV_PAD, 22)
+        header.addWidget(label("Моя аптечка", "sidebar_title", "brand_ink"))
+        header.addStretch(1)
+        header.addWidget(IconButton("panel-left", on_collapse))
+        outer.addLayout(header)
+
         self._items: Dict[str, NavItem] = {}
         for name in sections:
-            item = NavItem(inner, name, lambda value=name: on_select(value))
-            item.pack(fill="x")
+            item = NavItem(name, lambda value=name: on_select(value))
+            outer.addWidget(item)
             self._items[name] = item
-        self._build_footer(inner, user, on_logout, on_toggle_theme)
+        outer.addStretch(1)
+        self._build_footer(outer, user, on_logout, on_toggle_theme)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.fillRect(self.width() - 1, 0, 1, self.height(), palette().line)
 
     def set_active(self, name: str) -> None:
         """Выделяет раздел в меню."""
@@ -173,93 +249,47 @@ class Sidebar(tk.Frame):
         """Показывает счётчик у раздела."""
         self._items[name].set_count(count)
 
+    def item(self, name: str) -> NavItem:
+        """Пункт меню по названию раздела."""
+        return self._items[name]
+
     def _build_footer(
         self,
-        inner: tk.Frame,
+        outer: QVBoxLayout,
         user: User,
         on_logout: Callable[[], None],
         on_toggle_theme: Callable[[], None],
     ) -> None:
         pal = palette()
-        footer = tk.Frame(inner, bg=pal.side)
-        footer.pack(side="bottom", fill="x", pady=(0, 14 - NAV_PAD))
-        tk.Frame(footer, bg=pal.line, height=1).pack(fill="x", padx=NAV_PAD)
-        person = tk.Frame(footer, bg=pal.side)
-        person.pack(fill="x", padx=NAV_PAD + 8, pady=(14, 6))
-        avatar = tk.Canvas(
-            person,
-            width=AVATAR_SIZE,
-            height=AVATAR_SIZE,
-            bd=0,
-            highlightthickness=0,
-            bg=pal.side,
-        )
-        avatar.pack(side="left")
-        self._avatar = photo(
-            rounded_box(AVATAR_SIZE, AVATAR_SIZE, AVATAR_SIZE // 2, pal.primary), avatar
-        )
-        avatar.create_image(0, 0, image=self._avatar, anchor="nw")
-        avatar.create_text(
-            AVATAR_SIZE / 2,
-            AVATAR_SIZE / 2,
-            text=user.username[:1].upper(),
-            fill=pal.on_primary,
-            font=font_spec("counter", self),
-        )
-        names = tk.Frame(person, bg=pal.side)
-        names.pack(side="left", padx=(8, 0))
-        tk.Label(
-            names,
-            text=user.username,
-            bg=pal.side,
-            fg=pal.ink,
-            font=font_spec("user_name", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
-        tk.Label(
-            names,
-            text=user.login,
-            bg=pal.side,
-            fg=pal.ink_3,
-            font=font_spec("caption", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
+        line = _Line()
+        line_row = QHBoxLayout()
+        line_row.setContentsMargins(NAV_PAD, 0, NAV_PAD, 0)
+        line_row.addWidget(line)
+        outer.addLayout(line_row)
+
+        person = QHBoxLayout()
+        person.setContentsMargins(NAV_PAD + 8, 14, NAV_PAD + 8, 6)
+        person.setSpacing(8)
+        person.addWidget(_Avatar(user.username[:1].upper()))
+        names = QVBoxLayout()
+        names.setContentsMargins(0, 0, 0, 0)
+        names.setSpacing(0)
+        names.addWidget(label(user.username, "user_name"))
+        names.addWidget(label(user.login, "caption", "ink_3"))
+        person.addLayout(names)
+        person.addStretch(1)
+        outer.addLayout(person)
+
         dark = theme.theme_name() == theme.DARK_THEME
-        self._footer_link(
-            footer,
+        self.theme_link = _FooterLink(
             "Светлая тема" if dark else "Тёмная тема",
             "sun" if dark else "moon",
             pal.ink_2,
             on_toggle_theme,
-        ).pack(fill="x", padx=NAV_PAD + 12, pady=(0, 4))
-        self._footer_link(footer, "Выход", "logout", pal.red, on_logout).pack(
-            fill="x", padx=NAV_PAD + 12
         )
-
-    def _footer_link(
-        self,
-        footer: tk.Frame,
-        text: str,
-        icon: str,
-        color: str,
-        command: Callable[[], None],
-    ) -> tk.Label:
-        """Строка внизу меню: значок и подпись, нажатие вызывает команду."""
-        pal = palette()
-        glyph = photo(render_icon(icon, 14, color), footer)
-        self._footer_icons.append(glyph)
-        label = tk.Label(
-            footer,
-            text="  " + text,
-            image=glyph,
-            compound="left",
-            bg=pal.side,
-            fg=color,
-            font=font_spec("body", self),
-            cursor="hand2",
-            anchor="w",
-        )
-        label.bind("<Button-1>", lambda _event: command())
-        return label
+        self.logout_link = _FooterLink("Выход", "logout", pal.red, on_logout)
+        for link, bottom in ((self.theme_link, 4), (self.logout_link, 14 - NAV_PAD)):
+            row = QHBoxLayout()
+            row.setContentsMargins(NAV_PAD + 12, 0, NAV_PAD + 12, bottom)
+            row.addWidget(link)
+            outer.addLayout(row)

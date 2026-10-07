@@ -1,12 +1,12 @@
 """Оболочка главного окна: боковое меню и область с выбранным разделом."""
 
-import tkinter as tk
 from typing import TYPE_CHECKING, Callable, Dict, Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QPainter
+
 from pharmacy.models import User
-from pharmacy.services.container import Services
-from pharmacy.services.status import ProductStatus
-from pharmacy.ui import sections, theme
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.history import HistoryScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
@@ -15,16 +15,19 @@ from pharmacy.ui.screens.product_card import ProductCardScreen
 from pharmacy.ui.screens.product_form import ProductFormScreen
 from pharmacy.ui.screens.settings import SettingsScreen
 from pharmacy.ui.screens.shopping import ShoppingScreen
-from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
 from pharmacy.ui.widgets.dialog import Dialog
 from pharmacy.ui.widgets.iconbutton import IconButton
 from pharmacy.ui.widgets.scroll import ScrollArea
 from pharmacy.ui.widgets.sidebar import Sidebar
+from pharmacy.services.container import Services
+from pharmacy.services.status import ProductStatus
+from pharmacy.ui import sections, theme
+from pharmacy.ui.theme import CARD_SHADOW_PAD, palette
 
 if TYPE_CHECKING:
     from pharmacy.ui.app import App
 
-ScreenFactory = Callable[[tk.Misc, "MainShell"], tk.Frame]
+ScreenFactory = Callable[["MainShell"], QWidget]
 
 RAIL_WIDTH = 44  # ширина полосы, которая остаётся от свёрнутой боковой панели
 SIDEBAR_COLLAPSED = "sidebar_collapsed"  # ключи в предпочтениях пользователя
@@ -34,7 +37,29 @@ TEXT_SIZE = "text_size"
 CONTENT_PADDING_X = theme.CONTENT_PADDING_X - CARD_SHADOW_PAD
 
 
-class MainShell(tk.Frame):
+class _Rail(QFrame):
+    """Узкая полоса с кнопкой «развернуть», которая остаётся от свёрнутой панели."""
+
+    def __init__(self, on_expand: Callable[[], None]) -> None:
+        super().__init__()
+        self.setFixedWidth(RAIL_WIDTH)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.backdrop_color = palette().side
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 18, 1, 0)
+        layout.addWidget(
+            IconButton("panel-left", on_expand), 0, Qt.AlignmentFlag.AlignHCenter
+        )
+        layout.addStretch(1)
+
+    def paintEvent(self, _event) -> None:
+        pal = palette()
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(pal.side))
+        painter.fillRect(self.width() - 1, 0, 1, self.height(), QColor(pal.line))
+
+
+class MainShell(QWidget):
     """Главное окно после входа.
 
     Attributes:
@@ -43,11 +68,11 @@ class MainShell(tk.Frame):
         services: Сервисы приложения.
         notice: Сообщение для первого открытого экрана (например, «сохранено»).
             Экран забирает его и очищает.
+        section: Название открытого раздела.
     """
 
     def __init__(
         self,
-        master: tk.Misc,
         app: "App",
         start: str = sections.HOME,
         notice: str = "",
@@ -55,17 +80,16 @@ class MainShell(tk.Frame):
         """Создаёт оболочку и открывает стартовый раздел.
 
         Args:
-            master: Родительский виджет.
             app: Окно приложения.
             start: Раздел, который открывается первым.
             notice: Сообщение для стартового экрана.
         """
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+        super().__init__()
         self.app = app
         self.user: User = app.user
         self.services: Services = app.services
         self.notice = notice
+        self.backdrop_color = palette().bg
         self._sections: Dict[str, ScreenFactory] = {
             sections.HOME: DashboardScreen,
             sections.MY_KIT: MyKitScreen,
@@ -74,10 +98,12 @@ class MainShell(tk.Frame):
             sections.HISTORY: HistoryScreen,
             sections.SETTINGS: SettingsScreen,
         }
-        self._current: tk.Frame = None
+        self._current: Optional[QWidget] = None
         self.section = start
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
         self._sidebar = Sidebar(
-            self,
             self.user,
             sections.ALL,
             self.navigate,
@@ -85,32 +111,30 @@ class MainShell(tk.Frame):
             self.toggle_theme,
             lambda: self.set_sidebar_collapsed(True),
         )
-        self._rail = self._build_rail()
-        self._scroll = ScrollArea(self, gutter=CONTENT_PADDING_X)
-        self._collapsed = self.app.preferences.get(
-            self.user.id, SIDEBAR_COLLAPSED, False
+        self._rail = _Rail(lambda: self.set_sidebar_collapsed(False))
+        self._scroll = ScrollArea(gutter=CONTENT_PADDING_X)
+        self._collapsed = bool(
+            self.app.preferences.get(self.user.id, SIDEBAR_COLLAPSED, False)
         )
-        (self._rail if self._collapsed else self._sidebar).pack(side="left", fill="y")
-        self._scroll.pack(
-            side="left",
-            fill="both",
-            expand=True,
-            padx=(CONTENT_PADDING_X, 0),
-            pady=(theme.CONTENT_PADDING_Y, 0),
-        )
-        self._content = self._scroll.body
+        row.addWidget(self._sidebar)
+        row.addWidget(self._rail)
+        self._sidebar.setVisible(not self._collapsed)
+        self._rail.setVisible(self._collapsed)
+        content = QVBoxLayout()
+        content.setContentsMargins(CONTENT_PADDING_X, theme.CONTENT_PADDING_Y, 0, 0)
+        content.addWidget(self._scroll)
+        row.addLayout(content, 1)
         self.navigate(start)
 
-    def _build_rail(self) -> tk.Frame:
-        """Узкая полоса с кнопкой «развернуть», которая остаётся от свёрнутой панели."""
-        pal = palette()
-        rail = tk.Frame(self, bg=pal.side, width=RAIL_WIDTH)
-        rail.pack_propagate(False)
-        tk.Frame(rail, bg=pal.line, width=1).pack(side="right", fill="y")
-        IconButton(rail, "panel-left", lambda: self.set_sidebar_collapsed(False)).pack(
-            pady=(18, 0)
-        )
-        return rail
+    @property
+    def current(self) -> Optional[QWidget]:
+        """Экран открытого раздела."""
+        return self._current
+
+    @property
+    def sidebar(self) -> Sidebar:
+        """Боковое меню."""
+        return self._sidebar
 
     @property
     def sidebar_collapsed(self) -> bool:
@@ -123,16 +147,8 @@ class MainShell(tk.Frame):
             return
         self._collapsed = collapsed
         self.app.preferences.set(self.user.id, SIDEBAR_COLLAPSED, collapsed)
-        shown, hidden = (
-            (self._rail, self._sidebar)
-            if collapsed
-            else (
-                self._sidebar,
-                self._rail,
-            )
-        )
-        hidden.pack_forget()
-        shown.pack(side="left", fill="y", before=self._scroll)
+        self._sidebar.setVisible(not collapsed)
+        self._rail.setVisible(collapsed)
 
     def set_text_size(self, name: str) -> None:
         """Запоминает размер текста и сразу применяет его (окно строится заново)."""
@@ -150,49 +166,53 @@ class MainShell(tk.Frame):
         factory = self._sections.get(name)
         if factory is None:
             raise ValueError(f"Неизвестный раздел: {name}")
-        self.show(factory, name)
+        self.show_screen(factory, name)
 
-    def show(self, factory: ScreenFactory, section: str) -> None:
+    def show_screen(self, factory: ScreenFactory, section: str) -> None:
         """Показывает экран в области содержимого.
 
+        Экран строится целиком, пока прежний ещё на виду, а затем подменяет его.
+
         Args:
-            factory: Создаёт экран по (родитель, оболочка).
+            factory: Создаёт экран по оболочке.
             section: Раздел меню, который остаётся выделенным (карточка товара
                 относится к разделу «Моя аптечка»).
         """
-        if self._current is not None:
-            self._current.destroy()
-        self._current = factory(self._content, self)
-        self._current.pack(fill="both", expand=True, pady=(0, theme.CONTENT_PADDING_Y))
-        self._scroll.scroll_to_top()
+        screen = factory(self)
+        old = self._current
+        self._scroll.setUpdatesEnabled(False)
+        try:
+            self._scroll.body.addWidget(screen)
+            if old is not None:
+                self._scroll.body.removeWidget(old)
+                old.hide()
+                old.deleteLater()
+            self._current = screen
+            self._scroll.scroll_to_top()
+        finally:
+            self._scroll.setUpdatesEnabled(True)
         self.section = section
         self._sidebar.set_active(section)
         self.refresh_counters()
 
     def open_kit(self, status: Optional[ProductStatus] = None) -> None:
         """Открывает «Мою аптечку», при необходимости сразу с фильтром по состоянию."""
-        self.show(
-            lambda parent, shell: MyKitScreen(parent, shell, status), sections.MY_KIT
-        )
+        self.show_screen(lambda shell: MyKitScreen(shell, status), sections.MY_KIT)
 
     def open_shopping(self, tab: int = 0) -> None:
         """Открывает список покупок на нужной вкладке."""
-        self.show(
-            lambda parent, shell: ShoppingScreen(parent, shell, tab), sections.SHOPPING
-        )
+        self.show_screen(lambda shell: ShoppingScreen(shell, tab), sections.SHOPPING)
 
     def open_product(self, product_id: int) -> None:
         """Открывает карточку товара."""
-        self.show(
-            lambda parent, shell: ProductCardScreen(parent, shell, product_id),
-            sections.MY_KIT,
+        self.show_screen(
+            lambda shell: ProductCardScreen(shell, product_id), sections.MY_KIT
         )
 
     def open_product_form(self, product_id: Optional[int] = None) -> None:
         """Открывает форму нового товара или редактирования существующего."""
-        self.show(
-            lambda parent, shell: ProductFormScreen(parent, shell, product_id),
-            sections.MY_KIT,
+        self.show_screen(
+            lambda shell: ProductFormScreen(shell, product_id), sections.MY_KIT
         )
 
     def set_theme(self, name: str) -> None:

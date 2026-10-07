@@ -1,54 +1,39 @@
 """Модальные окна поверх затемнённого окна приложения."""
 
-import tkinter as tk
 from typing import Callable, Optional
 
-from PIL import Image, ImageGrab
+from PySide6.QtCore import QEvent, QObject, QRectF, Qt
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from pharmacy.ui import theme
-from pharmacy.ui.drawing import rgba, rounded_box
-from pharmacy.ui.fonts import font_spec
-from pharmacy.ui.icons import render_icon
-from pharmacy.ui.theme import mix, palette
+from pharmacy.ui.icons import icon_pixmap
+from pharmacy.ui.paint import begin, fill_rounded, qcolor
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import photo
+from pharmacy.ui.widgets.common import label
+from pharmacy.ui import theme
+from pharmacy.ui.theme import palette
 
 SCRIM_OPACITY = 0.42
 PADDING = 24
 WARN_SIZE = 42
 
 
-def _scrim_image(host: tk.Misc, width: int, height: int) -> Optional[Image.Image]:
-    """Снимок окна, затемнённый цветом подложки (None, если снять нельзя)."""
-    try:
-        shot = ImageGrab.grab(
-            bbox=(
-                host.winfo_rootx(),
-                host.winfo_rooty(),
-                host.winfo_rootx() + width,
-                host.winfo_rooty() + height,
-            )
-        ).convert("RGBA")
-    except OSError:
-        return None
-    shade = Image.new("RGBA", shot.size, rgba(palette().overlay, SCRIM_OPACITY))
-    return Image.alpha_composite(shot, shade)
-
-
-class Modal:
+class Modal(QWidget):
     """Белое окно по центру на затемнённом фоне, в которое кладётся содержимое.
 
+    Это обычный виджет поверх всего окна приложения (а не отдельное окно).
     Закрывается по Esc. Пока окно открыто, остальной интерфейс закрыт
     затемнением и не реагирует на нажатия. Содержимое добавляется в ``body``.
 
     Attributes:
-        body: Рамка для содержимого окна (внутри отступов).
+        body: Раскладка для содержимого окна (внутри отступов).
+        width_px: Ширина окна.
     """
 
     def __init__(
         self,
-        host: tk.Misc,
+        host: QWidget,
         width: int = 400,
         on_enter: Optional[Callable[[], None]] = None,
     ) -> None:
@@ -59,83 +44,108 @@ class Modal:
             width: Ширина окна.
             on_enter: Что вызвать по клавише Enter (необязательно).
         """
-        host.update_idletasks()
-        pal = palette()
-        self._host = host
-        self._images: list = []
-        self.width = width
-        shot = _scrim_image(host, host.winfo_width(), host.winfo_height())
-        self._scrim = tk.Canvas(
-            host,
-            bd=0,
-            highlightthickness=0,
-            bg=mix(pal.bg, pal.overlay, SCRIM_OPACITY),
+        self._window = host.window()
+        super().__init__(self._window)
+        self._on_enter = on_enter
+        self.width_px = width
+        self._closed = False
+        self.setGeometry(self._window.rect())
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.card = Card(radius=theme.MODAL_RADIUS, elevated=True)
+        outer.addWidget(self.card, 0, Qt.AlignmentFlag.AlignCenter)
+        host_widget = QWidget()
+        self.card.body.addWidget(host_widget)
+        self.body = QVBoxLayout(host_widget)
+        self.body.setContentsMargins(PADDING, PADDING, PADDING, PADDING)
+        self.body.setSpacing(0)
+        self.card.setFixedWidth(
+            width + 2 * (theme.MODAL_SHADOW_PAD + self.card.inner_inset)
         )
-        if shot is not None:
-            self._images.append(photo(shot, self._scrim))
-            self._scrim.create_image(0, 0, image=self._images[-1], anchor="nw")
-        self._scrim.place(x=0, y=0, relwidth=1, relheight=1)
-        self._scrim.bind("<Button-1>", lambda _event: "break")
+        self.show()
+        self.raise_()
+        self.setFocus()
+        self._window.installEventFilter(self)
 
-        self._card = Card(host, radius=theme.MODAL_RADIUS, elevated=True, backdrop=shot)
-        self._card.place(relx=0.5, rely=0.5, anchor="center")
-        self.body = tk.Frame(self._card.body, bg=pal.card, padx=PADDING, pady=PADDING)
-        self.body.pack()
-        tk.Frame(self.body, bg=pal.card, width=width - 2 * PADDING, height=1).pack()
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Растягивает затемнение вместе с окном."""
+        if watched is self._window and event.type() == QEvent.Type.Resize:
+            self.setGeometry(self._window.rect())
+        return False
 
-        self._card.focus_set()
-        toplevel = host.winfo_toplevel()
-        keys = [("<Escape>", self.close)]
-        if on_enter is not None:
-            keys.append(("<Return>", on_enter))
-        self._bindings = [
-            (sequence, toplevel.bind(sequence, lambda _event, c=call: c(), add="+"))
-            for sequence, call in keys
-        ]
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), qcolor(palette().overlay, SCRIM_OPACITY))
+
+    def mousePressEvent(self, event) -> None:
+        event.accept()  # затемнение не пропускает нажатия к тому, что под ним
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.close_modal()
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self._on_enter is not None:
+                self._on_enter()
+        else:
+            super().keyPressEvent(event)
 
     def add_title(self, title: str) -> None:
         """Добавляет заголовок."""
-        pal = palette()
-        tk.Label(
-            self.body,
-            text=title,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("modal_title", self._host),
-            padx=0,
-        ).pack(anchor="w", pady=(0, 8))
+        self.body.addWidget(label(title, "modal_title"))
+        self.body.addSpacing(8)
 
     def add_text(self, message: str, bottom: int = 0) -> None:
         """Добавляет пояснение под заголовком."""
-        pal = palette()
-        tk.Label(
-            self.body,
-            text=message,
-            bg=pal.card,
-            fg=pal.ink_2,
-            font=font_spec("body", self._host),
-            justify="left",
-            anchor="w",
-            wraplength=self.width - 2 * PADDING,
-            padx=0,
-        ).pack(anchor="w", fill="x", pady=(0, bottom))
+        self.body.addWidget(label(message, "body", "ink_2", wrap=True))
+        if bottom:
+            self.body.addSpacing(bottom)
 
-    def footer(self) -> tk.Frame:
+    def footer(self) -> QHBoxLayout:
         """Создаёт ряд для кнопок справа внизу окна."""
-        pal = palette()
-        row = tk.Frame(self.body, bg=pal.card)
-        row.pack(anchor="e", pady=(16, 0))
+        self.body.addSpacing(16)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        row.addStretch(1)
+        self.body.addLayout(row)
         return row
 
-    def close(self) -> None:
+    @property
+    def is_open(self) -> bool:
+        """Открыто ли окно."""
+        return not self._closed
+
+    def close_modal(self) -> None:
         """Закрывает окно и снимает затемнение."""
-        if not self._card.winfo_exists():
+        if self._closed:
             return
-        toplevel = self._host.winfo_toplevel()
-        for sequence, binding_id in self._bindings:
-            toplevel.unbind(sequence, binding_id)
-        self._card.destroy()
-        self._scrim.destroy()
+        self._closed = True
+        self._window.removeEventFilter(self)
+        self.hide()
+        self.deleteLater()
+
+
+class _Warning(QWidget):
+    """Красный круг с восклицательным знаком над заголовком."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(WARN_SIZE, WARN_SIZE)
+
+    def paintEvent(self, _event) -> None:
+        pal = palette()
+        painter = QPainter(self)
+        begin(painter)
+        fill_rounded(
+            painter, QRectF(0, 0, WARN_SIZE, WARN_SIZE), WARN_SIZE / 2, pal.red_bg
+        )
+        painter.drawPixmap(
+            (WARN_SIZE - 20) // 2,
+            (WARN_SIZE - 20) // 2,
+            icon_pixmap("alert", 20, pal.red),
+        )
 
 
 class Dialog(Modal):
@@ -147,7 +157,7 @@ class Dialog(Modal):
 
     def __init__(
         self,
-        host: tk.Misc,
+        host: QWidget,
         title: str,
         message: str,
         confirm_text: str,
@@ -173,36 +183,18 @@ class Dialog(Modal):
         super().__init__(host, width, on_enter=self._confirm)
         self._on_confirm = on_confirm
         if warning:
-            self._build_warning()
+            self.body.addWidget(_Warning())
+            self.body.addSpacing(14)
         self.add_title(title)
         self.add_text(message)
         buttons = self.footer()
-        Button(buttons, cancel_text, command=self.close).pack(side="left", padx=(0, 4))
-        Button(
-            buttons, confirm_text, command=self._confirm, variant=confirm_variant
-        ).pack(side="left")
-
-    def _build_warning(self) -> None:
-        """Рисует красный круг с восклицательным знаком над заголовком."""
-        pal = palette()
-        canvas = tk.Canvas(
-            self.body,
-            width=WARN_SIZE,
-            height=WARN_SIZE,
-            bd=0,
-            highlightthickness=0,
-            bg=pal.card,
+        self.cancel_button = Button(cancel_text, self.close_modal)
+        self.confirm_button = Button(
+            confirm_text, self._confirm, variant=confirm_variant
         )
-        canvas.pack(anchor="w", pady=(0, 14))
-        self._images.append(
-            photo(rounded_box(WARN_SIZE, WARN_SIZE, WARN_SIZE // 2, pal.red_bg), canvas)
-        )
-        self._images.append(photo(render_icon("alert", 20, pal.red), canvas))
-        canvas.create_image(0, 0, image=self._images[-2], anchor="nw")
-        canvas.create_image(
-            WARN_SIZE / 2, WARN_SIZE / 2, image=self._images[-1], anchor="center"
-        )
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.confirm_button)
 
     def _confirm(self) -> None:
-        self.close()
+        self.close_modal()
         self._on_confirm()

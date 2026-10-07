@@ -1,29 +1,49 @@
 """Тесты выпадающего списка, переключателей, таблицы и расширенных полей."""
 
-import tkinter as tk
 from typing import List
 
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+from pharmacy.ui import theme
+from pharmacy.ui.widgets.button import Button
+from pharmacy.ui.widgets.common import label
 from pharmacy.ui.widgets.controls import Checkbox, Pagination, Segmented, Toggle
-from pharmacy.ui.widgets.field import TextField
-from pharmacy.ui.widgets.popup import SHADOW_PAD, PopupList
+from pharmacy.ui.widgets.field import ICON_INSET, ICON_SIZE, TextField
+from pharmacy.ui.widgets.popup import MAX_VISIBLE, SHADOW_PAD, PopupList
 from pharmacy.ui.widgets.select import Select
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
-from tests.test_ui_widgets import WidgetTestCase
+from pharmacy.ui.fonts import text_width
+from tests.qt_helpers import WidgetTestCase, click, type_text
 
 
-def click(widget: tk.Misc, x: int, y: int) -> None:
-    widget.event_generate("<ButtonPress-1>", x=x, y=y)
-    widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+class Holder(WidgetTestCase):
+    """Окно с вертикальной раскладкой: виджеты прижаты к верху."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.layout = QVBoxLayout(self.root)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
+    def add(self, widget: QWidget, alignment=Qt.AlignmentFlag(0)) -> QWidget:
+        self.layout.addWidget(widget, 0, alignment | Qt.AlignmentFlag.AlignTop)
+        self.settle()
+        return widget
 
 
-class SelectTest(WidgetTestCase):
+def open_list(select: Select) -> PopupList:
+    click(select.frame, 40, 16)
+    select.window()  # окно уже знает о новом виджете
+    return select.popup
+
+
+class SelectTest(Holder):
     OPTIONS = [(1, "Лекарства"), (2, "Бытовая химия"), (3, "Гигиена")]
 
     def make(self, **kwargs) -> Select:
-        select = Select(self.root, self.OPTIONS, label="Категория", **kwargs)
-        select.pack(fill="x")
-        self.settle()
-        return select
+        return self.add(Select(self.OPTIONS, label_text="Категория", **kwargs))
 
     def test_value_is_not_the_label(self):
         select = self.make(value=2)
@@ -38,115 +58,125 @@ class SelectTest(WidgetTestCase):
         self.assertEqual(select.value, 3)
 
     def test_plain_strings_work_as_options(self):
-        select = Select(self.root, ["упак.", "шт."], value="шт.")
+        select = Select(["упак.", "шт."], value="шт.")
         self.assertEqual(select.get(), "шт.")
+
+    def test_shown_text_is_the_label_or_the_placeholder(self):
+        select = self.make(value=2, placeholder="Выберите")
+        self.assertEqual(select.shown_text(), "Бытовая химия")
+        select.set(None)
+        self.assertEqual(select.shown_text(), "Выберите")
 
     def test_click_opens_the_list_and_pick_changes_value(self):
         picked: List[object] = []
         select = self.make(on_change=picked.append)
-        click(select._canvas, 40, 16)
-        self.settle()
-        self.assertIsInstance(select._popup, PopupList)
-        popup = select._popup
-        popup.close()
+        popup = open_list(select)
+        self.assertIsInstance(popup, PopupList)
+        self.assertTrue(popup.isVisible())
         popup._on_pick(2)
+        popup.close_list()
         self.settle()
         self.assertEqual(select.get(), 2)
         self.assertEqual(picked, [2])
-        self.assertIsNone(select._popup)
+        self.assertIsNone(select.popup)
+
+    def test_click_on_a_row_of_the_list_picks_it(self):
+        picked: List[object] = []
+        select = self.make(on_change=picked.append)
+        popup = open_list(select)
+        row = 1  # вторая строка списка
+        y = 2 + 4 + row * 30 + 15
+        click(popup, SHADOW_PAD + 20, y)
+        self.settle()
+        self.assertEqual(picked, [2])
+        self.assertIsNone(select.popup)
 
     def test_one_click_on_another_select_switches_without_choosing(self):
         first = self.make(value=1)
         second = self.make(value=2)
-        click(first._canvas, 40, 16)
+        open_list(first)
+        self.assertIsNotNone(first.popup)
+        click(second.frame, 40, 16)
         self.settle()
-        self.assertIsNotNone(first._popup)
-        click(second._canvas, 40, 16)
-        self.settle()
-        self.assertIsNone(first._popup)
-        self.assertIsNotNone(second._popup)
+        self.assertIsNone(first.popup)
+        self.assertIsNotNone(second.popup)
         self.assertEqual(first.get(), 1)  # значение первого не изменилось
-        second._popup.close()
+        second.popup.close_list()
 
     def test_click_elsewhere_closes_the_list_and_keeps_the_value(self):
         select = self.make(value=1)
-        other = tk.Button(self.root, text="другая кнопка")
-        other.pack()
+        other = self.add(Button("другая кнопка"), Qt.AlignmentFlag.AlignLeft)
+        open_list(select)
+        self.assertIsNotNone(select.popup)
+        click(other)
         self.settle()
-        click(select._canvas, 40, 16)
-        self.settle()
-        self.assertIsNotNone(select._popup)
-        click(other, 5, 5)
-        self.settle()
-        self.assertIsNone(select._popup)
+        self.assertIsNone(select.popup)
         self.assertEqual(select.get(), 1)
 
     def test_clicking_the_same_select_twice_closes_the_list(self):
         select = self.make()
-        click(select._canvas, 40, 16)
+        open_list(select)
+        click(select.frame, 40, 16)
         self.settle()
-        click(select._canvas, 40, 16)
-        self.settle()
-        self.assertIsNone(select._popup)
-
-    def test_popup_does_not_grab_the_mouse(self):
-        select = self.make()
-        click(select._canvas, 40, 16)
-        self.settle()
-        self.assertEqual(self.root.grab_current(), None)
-        select._popup.close()
+        self.assertIsNone(select.popup)
 
     def test_popup_closes_on_escape(self):
         select = self.make()
-        click(select._canvas, 40, 16)
+        popup = open_list(select)
+        QTest.keyClick(popup, Qt.Key.Key_Escape)
         self.settle()
-        select._popup._canvas.focus_force()
-        select._popup._canvas.event_generate("<Escape>")
-        self.settle()
-        self.assertIsNone(select._popup)
+        self.assertIsNone(select.popup)
 
     def test_popup_is_a_widget_inside_the_window_not_a_separate_window(self):
         select = self.make()
-        click(select._canvas, 40, 16)
-        self.settle()
-        popup = select._popup
-        self.assertNotIsInstance(popup, tk.Toplevel)
-        self.assertIs(popup.master, select.winfo_toplevel())
-        self.assertEqual(popup.winfo_manager(), "place")
-        select._popup.close()
+        popup = open_list(select)
+        self.assertFalse(popup.isWindow())
+        self.assertIs(popup.parentWidget(), self.root)
+        popup.close_list()
 
     def test_popup_closes_when_the_window_is_resized(self):
         select = self.make()
-        click(select._canvas, 40, 16)
+        open_list(select)
+        self.root.resize(520, 420)
         self.settle()
-        self.root.geometry("520x420+0+0")
-        self.settle()
-        self.assertIsNone(select._popup)
+        self.assertIsNone(select.popup)
 
     def test_clicking_inside_the_popup_does_not_close_it_as_outside(self):
         select = self.make()
-        click(select._canvas, 40, 16)
+        popup = open_list(select)
+        # Нажатие внутри списка не считается нажатием «вне» (список закроется
+        # сам, когда мышь отпустят на варианте).
+        QTest.mousePress(
+            popup, Qt.MouseButton.LeftButton, pos=QPoint(SHADOW_PAD + 20, 25)
+        )
         self.settle()
-        popup = select._popup
-        popup._on_outside_press(type("E", (), {"widget": popup._canvas})())
-        self.assertIsNotNone(select._popup)
-        select._popup.close()
+        self.assertIsNotNone(select.popup)
+        QTest.mouseRelease(
+            popup, Qt.MouseButton.LeftButton, pos=QPoint(SHADOW_PAD + 20, 25)
+        )
+        self.settle()
+        self.assertIsNone(select.popup)
+
+    def test_popup_starts_below_the_field(self):
+        select = self.make()
+        popup = open_list(select)
+        field_bottom = select.frame.mapTo(
+            self.root, select.frame.rect().bottomLeft()
+        ).y()
+        self.assertGreaterEqual(popup.y(), field_bottom - 8)
+        popup.close_list()
 
     def test_popup_opens_above_the_field_when_there_is_no_room_below(self):
-        select = self.make()
-        select.place(x=10, y=self.root.winfo_height() - 40)
-        self.settle()
-        click(select._canvas, 40, 16)
-        self.settle()
-        popup = select._popup
-        field = popup._anchor
-        self.assertLess(popup.winfo_rooty(), field.winfo_rooty())
+        self.layout.addStretch(1)
+        select = self.add(Select(self.OPTIONS, label_text="Категория"))
+        popup = open_list(select)
+        box_top = select.frame.mapTo(
+            self.root, select.frame.box_rect().topLeft().toPoint()
+        ).y()
+        self.assertLess(popup.y(), box_top)
         # Низ списка (без поля под тень) упирается в верх поля, а не заходит на него.
-        self.assertEqual(
-            popup.winfo_rooty() + popup.winfo_height() - SHADOW_PAD,
-            field.winfo_rooty(),
-        )
-        select._popup.close()
+        self.assertEqual(popup.y() + popup.height() - SHADOW_PAD, box_top)
+        popup.close_list()
 
     def test_error_is_cleared_after_pick(self):
         select = self.make()
@@ -155,38 +185,91 @@ class SelectTest(WidgetTestCase):
         self.assertIsNone(select.error)
 
     def test_compact_width_follows_longest_option(self):
-        select = Select(self.root, self.OPTIONS, compact=True, prefix="Сортировка: ")
-        self.assertGreater(int(select._canvas.cget("width")), 120)
+        select = Select(self.OPTIONS, 1, compact=True, prefix="Сортировка: ")
+        self.assertGreater(select.minimumWidth(), 120)
 
     def test_set_options(self):
         select = self.make(value=1)
         select.set_options([(9, "Новая")])
         self.assertEqual(select._label_of(9), "Новая")
 
+    def test_hand_cursor_over_the_field(self):
+        select = self.make()
+        self.assertEqual(
+            select.frame.cursor().shape(), Qt.CursorShape.PointingHandCursor
+        )
 
-class PopupListTest(WidgetTestCase):
+
+class PopupListTest(Holder):
     def test_scrolls_long_lists(self):
-        anchor = tk.Canvas(self.root, width=200, height=30)
-        anchor.pack()
+        anchor = self.add(QWidget())
+        anchor.setFixedSize(200, 30)
         self.settle()
         options = [(i, f"Вариант {i}") for i in range(20)]
         popup = PopupList(anchor, options, 0, lambda value: None)
         self.settle()
-        popup._canvas.event_generate("<MouseWheel>", delta=-120, x=20, y=40)
+        QTest.mouseMove(popup, popup.rect().center())
+        popup.wheelEvent(_Wheel(-120))
         self.assertEqual(popup._offset, 1)
         popup._offset = 100
-        popup._on_wheel(type("E", (), {"delta": -120})())
-        self.assertEqual(popup._offset, 12)
-        popup.close()
-        popup.close()
+        popup.wheelEvent(_Wheel(-120))
+        self.assertEqual(popup._offset, 20 - MAX_VISIBLE)
+        popup.wheelEvent(_Wheel(120))
+        self.assertEqual(popup._offset, 20 - MAX_VISIBLE - 1)
+        popup.close_list()
+        popup.close_list()
+
+    def test_short_list_ignores_the_wheel(self):
+        anchor = self.add(QWidget())
+        anchor.setFixedSize(200, 30)
+        popup = PopupList(anchor, [(1, "Один"), (2, "Два")], 1, lambda value: None)
+        popup.wheelEvent(_Wheel(-120))
+        self.assertEqual(popup._offset, 0)
+        popup.close_list()
+
+    def test_closing_calls_the_callback_once(self):
+        anchor = self.add(QWidget())
+        anchor.setFixedSize(200, 30)
+        calls: List[int] = []
+        popup = PopupList(
+            anchor, [(1, "Один")], 1, lambda v: None, lambda: calls.append(1)
+        )
+        popup.close_list()
+        popup.close_list()
+        self.assertEqual(calls, [1])
 
 
-class TextFieldExtrasTest(WidgetTestCase):
+class _Wheel:
+    """Колесо мыши для вызова обработчика напрямую."""
+
+    def __init__(self, delta: int) -> None:
+        self._delta = delta
+
+    def angleDelta(self):
+        class Point:
+            def __init__(self, y):
+                self._y = y
+
+            def y(self):
+                return self._y
+
+        return Point(self._delta)
+
+
+class TextFieldExtrasTest(Holder):
     def make(self, **kwargs) -> TextField:
-        field = TextField(self.root, **kwargs)
-        field.pack(fill="x")
+        return self.add(TextField(**kwargs))
+
+    def clipboard(self) -> str:
+        return QGuiApplication.clipboard().text()
+
+    def set_clipboard(self, text: str) -> None:
+        QGuiApplication.clipboard().setText(text)
+
+    def shortcut(self, field: TextField, key: Qt.Key) -> None:
+        field.entry.setFocus()
+        QTest.keyClick(field.entry, key, Qt.KeyboardModifier.ControlModifier)
         self.settle()
-        return field
 
     def test_without_label(self):
         field = self.make(placeholder="Поиск", leading_icon="search")
@@ -194,206 +277,163 @@ class TextFieldExtrasTest(WidgetTestCase):
         self.assertEqual(field.get(), "бинт")
 
     def test_multiline_text(self):
-        field = self.make(label="Примечание", multiline=True, placeholder="Введите")
+        field = self.make(
+            label_text="Примечание", multiline=True, placeholder="Введите"
+        )
         self.assertEqual(field.get(), "")
         field.set("первая\nвторая")
         self.assertEqual(field.get(), "первая\nвторая")
         field.set("")
         self.assertEqual(field.get(), "")
 
-    def test_multiline_placeholder_cycle(self):
-        field = self.make(label="Примечание", multiline=True, placeholder="Введите")
-        field.entry.event_generate("<FocusIn>")
-        self.assertEqual(field.entry.get("1.0", "end-1c"), "")
-        field.entry.event_generate("<FocusOut>")
-        self.assertEqual(field.entry.get("1.0", "end-1c"), "Введите")
+    def test_multiline_is_taller(self):
+        single = self.make(label_text="Один")
+        multi = self.make(label_text="Много", multiline=True)
+        self.assertGreater(multi.frame.height(), single.frame.height())
 
     def test_readonly_keeps_value_but_can_be_set_from_code(self):
-        field = self.make(label="Логин", readonly=True)
+        field = self.make(label_text="Логин", readonly=True)
         field.set("nessquish")
         self.assertEqual(field.get(), "nessquish")
-        field.entry.insert(0, "x")
+        type_text(field.entry, "x")
         self.assertEqual(field.get(), "nessquish")
 
-    def test_on_change_fires_for_typing_but_not_for_placeholder(self):
+    def test_on_change_fires_for_typing_but_not_for_setting(self):
         calls: List[int] = []
         field = self.make(placeholder="Поиск", on_change=lambda: calls.append(1))
-        field.entry.event_generate("<FocusIn>")
-        field.entry.event_generate("<FocusOut>")
+        field.set("текст")
         self.assertEqual(calls, [])
-        field.entry.focus_force()
-        self.settle()
-        field.entry.insert(0, "а")
-        field.entry.event_generate("<KeyRelease>", keysym="BackSpace")
-        self.settle()
+        type_text(field.entry, "а")
         self.assertEqual(calls, [1])
 
-    def shortcut(self, field, keycode, keysym="Cyrillic_em"):
-        """Нажатие Ctrl+клавиша на русской раскладке (буква не латинская)."""
-        event = type("E", (), {"keysym": keysym, "keycode": keycode})()
-        return field._on_shortcut(event)
+    def test_cyrillic_typing_works(self):
+        field = self.make()
+        type_text(field.entry, "Привет")
+        self.assertEqual(field.get(), "Привет")
 
-    def test_paste_works_on_russian_layout(self):
+    def test_paste_works(self):
         calls: List[int] = []
         field = self.make(on_change=lambda: calls.append(1))
-        self.root.clipboard_clear()
-        self.root.clipboard_append("из буфера")
-        field.entry.focus_force()
-        self.settle()
-        self.assertEqual(self.shortcut(field, 86), "break")
-        self.settle()
+        self.set_clipboard("из буфера")
+        self.shortcut(field, Qt.Key.Key_V)
         self.assertEqual(field.get(), "из буфера")
         self.assertEqual(calls, [1])
 
-    def test_copy_and_cut_on_russian_layout(self):
+    def test_copy_and_cut(self):
         field = self.make()
         field.set("текст")
-        field.entry.focus_force()
-        field.entry.selection_range(0, "end")
-        self.shortcut(field, 67, "Cyrillic_es")
-        self.assertEqual(self.root.clipboard_get(), "текст")
-        self.shortcut(field, 88, "Cyrillic_che")
-        self.settle()
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_C)
+        self.assertEqual(self.clipboard(), "текст")
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_X)
         self.assertEqual(field.get(), "")
 
-    def password(self, value="Секрет123"):
-        field = self.make(password=True, label="Пароль")
+    def password(self, value: str = "Секрет123") -> TextField:
+        field = self.make(password=True, label_text="Пароль")
         field.set(value)
-        field.entry.focus_force()
-        self.settle()
+        field.entry.setFocus()
         return field
 
     def test_copy_from_a_hidden_field_gives_the_real_text(self):
         field = self.password()
-        field.entry.selection_range(0, "end")
-        field.entry.event_generate("<<Copy>>")
-        self.assertEqual(self.root.clipboard_get(), "Секрет123")
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_C)
+        self.assertEqual(self.clipboard(), "Секрет123")
         self.assertEqual(field.get(), "Секрет123")
 
     def test_copy_part_of_a_hidden_field(self):
         field = self.password()
-        field.entry.selection_range(2, 5)
-        field.entry.event_generate("<<Copy>>")
-        self.assertEqual(self.root.clipboard_get(), "кре")
+        field.entry.setSelection(2, 3)
+        self.shortcut(field, Qt.Key.Key_C)
+        self.assertEqual(self.clipboard(), "кре")
 
     def test_cut_from_a_hidden_field(self):
         field = self.password()
-        field.entry.selection_range(0, "end")
-        field.entry.event_generate("<<Cut>>")
-        self.settle()
-        self.assertEqual(self.root.clipboard_get(), "Секрет123")
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_X)
+        self.assertEqual(self.clipboard(), "Секрет123")
         self.assertEqual(field.get(), "")
 
     def test_cut_part_of_a_hidden_field(self):
         field = self.password()
-        field.entry.selection_range(0, 3)
-        field.entry.event_generate("<<Cut>>")
-        self.assertEqual(self.root.clipboard_get(), "Сек")
+        field.entry.setSelection(0, 3)
+        self.shortcut(field, Qt.Key.Key_X)
+        self.assertEqual(self.clipboard(), "Сек")
         self.assertEqual(field.get(), "рет123")
-
-    def test_keyboard_shortcut_on_russian_layout_copies_the_real_text(self):
-        field = self.password()
-        field.entry.selection_range(0, "end")
-        self.shortcut(field, 67, "Cyrillic_es")
-        self.assertEqual(self.root.clipboard_get(), "Секрет123")
 
     def test_revealed_password_copies_normally(self):
         field = self.password("abc123")
         field._toggle_reveal()
-        field.entry.selection_range(0, "end")
-        field.entry.event_generate("<<Copy>>")
-        self.assertEqual(self.root.clipboard_get(), "abc123")
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_C)
+        self.assertEqual(self.clipboard(), "abc123")
 
     def test_copy_with_nothing_selected_keeps_the_clipboard(self):
         field = self.password()
-        self.root.clipboard_clear()
-        self.root.clipboard_append("старое")
-        field.entry.selection_clear()
-        field.entry.event_generate("<<Copy>>")
-        self.assertEqual(self.root.clipboard_get(), "старое")
+        self.set_clipboard("старое")
+        field.entry.deselect()
+        self.shortcut(field, Qt.Key.Key_C)
+        self.assertEqual(self.clipboard(), "старое")
 
     def test_paste_into_a_hidden_field_still_works(self):
-        field = self.make(password=True, label="Пароль")
-        self.root.clipboard_clear()
-        self.root.clipboard_append("Вставлено1")
-        field.entry.focus_force()
-        self.settle()
-        field.entry.event_generate("<<Paste>>")
-        self.settle()
+        field = self.make(password=True, label_text="Пароль")
+        self.set_clipboard("Вставлено1")
+        self.shortcut(field, Qt.Key.Key_V)
         self.assertEqual(field.get(), "Вставлено1")
 
-    def test_plain_field_copy_is_unchanged(self):
-        field = self.make(label="Название")
-        field.set("Бинт")
-        field.entry.focus_force()
-        field.entry.selection_range(0, "end")
-        field.entry.event_generate("<<Copy>>")
-        self.assertEqual(self.root.clipboard_get(), "Бинт")
-
-    def test_select_all_on_russian_layout(self):
-        field = self.make()
-        field.set("текст")
-        self.shortcut(field, 65, "Cyrillic_ef")
-        self.assertEqual(field.entry.selection_get(), "текст")
-
-    def test_multiline_paste_and_select_all(self):
-        field = self.make(label="Примечание", multiline=True)
-        self.root.clipboard_clear()
-        self.root.clipboard_append("строка")
-        field.entry.focus_force()
-        self.settle()
-        self.shortcut(field, 86)
-        self.settle()
-        self.assertEqual(field.get(), "строка")
-        self.shortcut(field, 65, "Cyrillic_ef")
-        self.assertEqual(field.entry.tag_ranges("sel") != (), True)
-
-    def test_latin_layout_is_left_to_tk(self):
-        field = self.make()
-        self.assertIsNone(self.shortcut(field, 86, "v"))
-
-    def test_other_shortcuts_are_ignored(self):
-        field = self.make()
-        self.assertIsNone(self.shortcut(field, 90, "Cyrillic_ya"))
+    def test_readonly_hidden_field_copies_but_does_not_cut(self):
+        field = self.make(password=True, readonly=True, label_text="Пароль")
+        field.set("demo12345")
+        field.entry.setFocus()
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_C)
+        self.assertEqual(self.clipboard(), "demo12345")
+        self.set_clipboard("")
+        field.entry.selectAll()
+        self.shortcut(field, Qt.Key.Key_X)
+        self.assertEqual(field.get(), "demo12345")
 
     def test_readonly_field_cannot_be_pasted_into(self):
-        field = self.make(label="Логин", readonly=True)
+        field = self.make(label_text="Логин", readonly=True)
         field.set("nessquish")
-        self.root.clipboard_clear()
-        self.root.clipboard_append("чужое")
-        field.entry.focus_force()
-        self.settle()
-        self.shortcut(field, 86)
-        self.settle()
+        self.set_clipboard("чужое")
+        self.shortcut(field, Qt.Key.Key_V)
         self.assertEqual(field.get(), "nessquish")
 
+    def test_trailing_icon_does_not_change_the_text_area_rules(self):
+        field = self.make(trailing_icon="calendar", label_text="Срок")
+        self.assertIsNotNone(field._trailing)
+        self.assertEqual(field._trailing.width(), ICON_SIZE)
+        self.assertGreater(ICON_INSET, 0)
 
-class SegmentedTest(WidgetTestCase):
+
+class SegmentedTest(Holder):
     def make(self, variant="tabs") -> Segmented:
         changes: List[int] = []
-        seg = Segmented(
-            self.root,
-            ["Все · 4", "Не куплено · 3", "Куплено · 1"],
-            0,
-            changes.append,
-            variant,
+        seg = self.add(
+            Segmented(
+                ["Все · 4", "Не куплено · 3", "Куплено · 1"],
+                0,
+                changes.append,
+                variant,
+            ),
+            Qt.AlignmentFlag.AlignLeft,
         )
-        seg.pack()
         seg.changes = changes
-        self.settle()
         return seg
 
     def test_click_selects_item(self):
         for variant in ("tabs", "outline"):
             seg = self.make(variant)
-            left, right = seg._spans[1]
+            left, right = seg.spans[1]
             click(seg, (left + right) // 2, 15)
             self.assertEqual(seg.active, 1)
             self.assertEqual(seg.changes, [1])
 
     def test_clicking_active_item_does_nothing(self):
         seg = self.make()
-        left, right = seg._spans[0]
+        left, right = seg.spans[0]
         click(seg, (left + right) // 2, 15)
         self.assertEqual(seg.changes, [])
 
@@ -405,112 +445,109 @@ class SegmentedTest(WidgetTestCase):
 
     def test_set_items_updates_labels(self):
         seg = self.make()
-        before = int(seg.cget("width"))
+        before = seg.width()
         seg.set_items(["Все · 1000", "Не куплено · 3", "Куплено · 1"])
-        self.assertGreater(int(seg.cget("width")), before)
+        self.assertGreater(seg.width(), before)
 
     def test_unknown_variant(self):
         with self.assertRaises(ValueError):
-            Segmented(self.root, ["a"], variant="x")
+            Segmented(["a"], variant="x")
 
 
-class SwitchTest(WidgetTestCase):
+class SwitchTest(Holder):
     def test_toggle(self):
         values: List[bool] = []
-        toggle = Toggle(self.root, True, values.append)
-        toggle.pack()
-        self.settle()
-        click(toggle, 5, 5)
-        click(toggle, 5, 5)
+        toggle = self.add(Toggle(True, values.append), Qt.AlignmentFlag.AlignLeft)
+        click(toggle)
+        click(toggle)
         self.assertEqual(values, [False, True])
         self.assertTrue(toggle.value)
 
     def test_toggle_set_is_silent(self):
         values: List[bool] = []
-        toggle = Toggle(self.root, False, values.append)
+        toggle = Toggle(False, values.append)
         toggle.set(True)
         self.assertTrue(toggle.value)
         self.assertEqual(values, [])
 
     def test_checkbox(self):
         values: List[bool] = []
-        box = Checkbox(self.root, False, values.append)
-        box.pack()
-        self.settle()
-        click(box, 5, 5)
+        box = self.add(Checkbox(False, values.append), Qt.AlignmentFlag.AlignLeft)
+        click(box)
         self.assertTrue(box.value)
         box.set(False)
         self.assertFalse(box.value)
         self.assertEqual(values, [True])
 
+    def test_toggle_and_checkbox_are_painted_in_the_accent_when_on(self):
+        box = self.add(Checkbox(True), Qt.AlignmentFlag.AlignLeft)
+        color = box.grab().toImage().pixelColor(1, 7).name().upper()
+        self.assertEqual(color, theme.LIGHT.primary.upper())
 
-class PaginationTest(WidgetTestCase):
+
+class PaginationTest(Holder):
     def make(self, page=1, pages=3):
         picked: List[int] = []
-        pager = Pagination(self.root, page, pages, picked.append)
-        pager.pack()
+        pager = self.add(
+            Pagination(page, pages, picked.append), Qt.AlignmentFlag.AlignLeft
+        )
         pager.picked = picked
-        self.settle()
         return pager
 
-    def cell_x(self, index: int) -> int:
-        return index * (Pagination.CELL + Pagination.GAP) + 5
+    def cell_x(self, pager: Pagination, index: int) -> int:
+        return pager.cell_left(index) + 5
 
     def test_page_buttons(self):
         pager = self.make()
-        click(pager, self.cell_x(2), 5)  # цифра 2
+        click(pager, self.cell_x(pager, 2), 5)  # цифра 2
         self.assertEqual(pager.picked, [2])
+        self.assertEqual(pager.page, 2)
 
     def test_arrows(self):
         pager = self.make(page=2)
-        click(pager, self.cell_x(4), 5)  # стрелка вперёд
-        click(pager, self.cell_x(0), 5)  # стрелка назад
+        click(pager, self.cell_x(pager, 4), 5)  # стрелка вперёд
+        click(pager, self.cell_x(pager, 0), 5)  # стрелка назад
         self.assertEqual(pager.picked, [3, 2])
 
     def test_disabled_arrow_and_current_page_do_nothing(self):
         pager = self.make(page=1)
-        click(pager, self.cell_x(0), 5)
-        click(pager, self.cell_x(1), 5)
+        click(pager, self.cell_x(pager, 0), 5)
+        click(pager, self.cell_x(pager, 1), 5)
         self.assertEqual(pager.picked, [])
 
     def test_single_page(self):
         pager = self.make(page=1, pages=1)
-        click(pager, self.cell_x(2), 5)
+        click(pager, self.cell_x(pager, 2), 5)
         self.assertEqual(pager.picked, [])
 
 
-class DataTableTest(WidgetTestCase):
+class DataTableTest(Holder):
     def make(self) -> DataTable:
         table = DataTable(
-            self.root,
             [
                 Column("Название", 3),
                 Column("Срок", 2),
                 Column("", fixed=40),
             ],
         )
-        table.pack(fill="x")
-        self.settle()
-        return table
+        return self.add(table)
 
     def test_rows_are_added_and_cleared(self):
         table = self.make()
         table.add_row(["Бинт", "01.01.2027", "x"])
         table.add_row(["Вата", "02.01.2027", "y"])
         self.settle()
-        rows = [
-            w
-            for w in table._body.winfo_children()
-            if isinstance(w, tk.Frame) and w.winfo_height() > 1
-        ]
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(table.row_count, 2)
+        self.assertEqual(table.row_texts[0], ["Бинт", "01.01.2027", "x"])
         table.clear()
-        self.assertEqual(table._body.winfo_children(), [])
+        self.settle()
+        self.assertEqual(table.row_count, 0)
+        self.assertEqual(table.row_texts, [])
 
     def test_link_cell_calls_command(self):
         calls: List[int] = []
         table = self.make()
-        row = table.add_row(
+        table.add_row(
             [
                 TextCell("Бинт", "primary", True, on_click=lambda: calls.append(1)),
                 "-",
@@ -518,41 +555,125 @@ class DataTableTest(WidgetTestCase):
             ]
         )
         self.settle()
-        row.grid_slaves(column=0)[0].event_generate("<Button-1>")
+        click(table.cell_widgets(0)[0])
         self.assertEqual(calls, [1])
 
     def test_widget_cells(self):
         table = self.make()
-        row = table.add_row(
-            ["Бинт", lambda parent: tk.Label(parent, text="виджет"), ""]
-        )
-        self.assertEqual(row.grid_slaves(column=1)[0].cget("text"), "виджет")
+        table.add_row(["Бинт", lambda: label("виджет"), ""])
+        self.settle()
+        self.assertEqual(table.cell_widgets(1)[0].text(), "виджет")
 
-    def test_strike_and_muted_cells(self):
+    def test_strike_cell(self):
         table = self.make()
-        row = table.add_row([TextCell("Витамин C", "ink_3", strike=True), "", ""])
-        self.assertIn("overstrike", str(row.grid_slaves(column=0)[0].cget("font")))
+        table.add_row([TextCell("Витамин C", "ink_3", strike=True), "", ""])
+        self.assertTrue(table.cell_widgets(0)[0].font().strikeOut())
 
     def test_selected_row_has_highlight(self):
         table = self.make()
-        plain = table.add_row(["a", "b", "c"])
-        chosen = table.add_row(["a", "b", "c"], selected=True)
-        self.assertNotEqual(plain.cget("bg"), chosen.cget("bg"))
+        table.add_row(["a", "b", "c"])
+        plain = len(table._rows)
+        table.add_row(["a", "b", "c"], selected=True)
+        # У выбранной строки добавляется ещё и подложка.
+        self.assertEqual(len(table._rows) - plain, plain + 1)
 
     def test_message_row(self):
         table = self.make()
         table.add_message("Ничего не найдено")
         self.settle()
-        texts = [
-            w.cget("text")
-            for w in table._body.winfo_children()
-            if isinstance(w, tk.Label)
-        ]
-        self.assertEqual(texts, ["Ничего не найдено"])
+        self.assertEqual(table.row_count, 0)
+        self.assertIn(
+            "Ничего не найдено", [w.text() for w in table.findChildren(type(label("")))]
+        )
 
-    def test_header_columns_follow_weights(self):
+    def test_sort_arrow_is_shown_for_one_column(self):
         table = self.make()
-        lefts = table._fractions()
-        self.assertEqual(lefts[0], 0)
-        self.assertGreater(lefts[1], 0)
-        self.assertAlmostEqual(table._width - lefts[2], 40, delta=1)
+        table.set_sorted(1)
+        self.assertEqual(table.sorted_column, 1)
+        table.set_sorted(None)
+        self.assertIsNone(table.sorted_column)
+
+    def test_columns_follow_weights(self):
+        table = self.make()
+        table.add_row(["Бинт", "01.01.2027", ""])
+        self.settle()
+        first = table._cells[0][0].width()
+        second = table._cells[0][1].width()
+        fixed = table._cells[0][2].width()
+        self.assertEqual(fixed, 40)
+        self.assertAlmostEqual(first / second, 3 / 2, delta=0.05)
+
+    def test_header_widget_replaces_the_title(self):
+        table = self.make()
+        box = table.set_header_widget(2, lambda: Checkbox(False))
+        self.settle()
+        self.assertTrue(box.isVisible())
+
+    def test_without_a_card_the_header_paints_itself(self):
+        table = self.make()
+        self.assertTrue(table._grid_host.paint_header)
+
+
+class CompactSelectWidthTest(Holder):
+    def test_text_never_runs_under_the_arrow(self):
+        options = [("a", "срок годности"), ("b", "дата добавления"), ("c", "имя")]
+        for value in ("a", "b", "c"):
+            select = self.add(
+                Select(options, value, compact=True, prefix="Сортировка: "),
+                Qt.AlignmentFlag.AlignLeft,
+            )
+            needed = (
+                select._inset
+                + text_width(select.shown_text(), "body")
+                + ICON_SIZE
+                + ICON_INSET
+            )
+            self.assertGreaterEqual(select.width() - 8, needed)
+            select.setParent(None)
+            select.deleteLater()
+
+    def test_width_follows_the_chosen_value(self):
+        select = self.add(
+            Select([("a", "имя"), ("b", "очень длинное название")], "a", compact=True),
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        short = select.width()
+        select.set("b")
+        self.settle()
+        self.assertGreater(select.width(), short)
+
+
+class SelectBorderTest(Holder):
+    OPTIONS = [(1, "Все категории"), (2, "Лекарства")]
+
+    def make(self) -> Select:
+        return self.add(
+            Select(self.OPTIONS, 1, compact=True), Qt.AlignmentFlag.AlignLeft
+        )
+
+    def test_blue_border_only_while_the_list_is_open(self):
+        select = self.make()
+        self.assertEqual(select.frame_colors()[0], theme.LIGHT.line)
+        select.frame_pressed(None)
+        self.settle()
+        self.assertEqual(select.frame_colors()[0], theme.LIGHT.primary)
+        select.popup.close_list()
+        self.settle()
+        self.assertEqual(select.frame_colors()[0], theme.LIGHT.line)
+
+    def test_border_is_normal_after_picking(self):
+        select = self.make()
+        select.frame_pressed(None)
+        popup = select.popup
+        popup._on_pick(2)
+        popup.close_list()
+        self.settle()
+        self.assertEqual(select.frame_colors()[0], theme.LIGHT.line)
+
+    def test_error_color_wins_over_open_state(self):
+        select = self.make()
+        select.set_error("Выберите")
+        select.frame_pressed(None)
+        self.settle()
+        self.assertEqual(select.frame_colors()[0], theme.LIGHT.red)
+        select.popup.close_list()

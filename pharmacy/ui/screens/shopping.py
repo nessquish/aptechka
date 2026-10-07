@@ -1,13 +1,12 @@
 """Экран «Список покупок» (макет Figma, экраны 09 и 10)."""
 
-import tkinter as tk
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Set
 
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+
 from pharmacy.errors import ValidationError
 from pharmacy.models import ShoppingItem, ShoppingSource
-from pharmacy.services.product_service import UNITS
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.actionbar import ActionBar
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.button import Button
@@ -19,6 +18,8 @@ from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
+from pharmacy.services.product_service import UNITS
+from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
 
@@ -48,74 +49,70 @@ def _created(item: ShoppingItem) -> str:
     return format_user_date(datetime.strptime(item.created_at[:10], "%Y-%m-%d").date())
 
 
-class ShoppingScreen(tk.Frame):
+class ShoppingScreen(QWidget):
     """Таблица позиций с фильтрами-вкладками, выбором строк и действиями над ними."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell", tab: int = 0) -> None:
+    def __init__(self, shell: "MainShell", tab: int = 0) -> None:
         """Создаёт экран.
 
         Args:
-            master: Родительский виджет.
             shell: Оболочка главного окна.
             tab: Выбранная вкладка: 0 все, 1 не куплено, 2 куплено.
         """
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+        super().__init__()
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
         self._filter = tab
         self._selected: Set[int] = set()
         self._visible: List[ShoppingItem] = []
-        header = PageHeader(self, "Список покупок")
-        header.pack(fill="x")
-        self._tabs = Segmented(
-            header.actions,
-            self._tab_labels(),
-            self._filter,
-            self._on_tab,
-        )
-        self._tabs.pack(side="left", padx=(0, 10))
-        Button(
-            header.actions,
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        header = PageHeader("Список покупок")
+        self._tabs = Segmented(self._tab_labels(), self._filter, self._on_tab)
+        header.actions.addWidget(self._tabs)
+        header.actions.addSpacing(10)
+        self.add_button = Button(
             "Добавить вручную",
             command=self._open_add_dialog,
             variant="primary",
             icon="plus",
-        ).pack(side="left")
+        )
+        header.actions.addWidget(self.add_button)
+        self._layout.addWidget(header)
+        self._layout.addSpacing(18 - CARD_SHADOW_PAD - SHADOW_PAD)
         self._build_table()
+        self._layout.addStretch(1)
         self._reload()
 
     # --- построение ---
 
     def _build_table(self) -> None:
-        pal = palette()
-        card = Card(self, flush=True)
-        card.pack(fill="x", pady=(18 - CARD_SHADOW_PAD - SHADOW_PAD, 0))
-        self._bar = ActionBar(card.body, card)
-        Button(
-            self._bar.buttons,
+        card = Card(flush=True)
+        self._bar = ActionBar(card)
+        self.bought_button = Button(
             "Отметить как купленные",
             command=self._mark_bought,
             variant="primary",
             size="sm",
             icon="check",
-        ).pack(side="left", padx=(0, 4))
-        Button(
-            self._bar.buttons,
+        )
+        self.remove_button = Button(
             "Удалить из списка",
             command=self._remove_selected,
             variant="danger",
             size="sm",
-        ).pack(side="left")
-        self._table = DataTable(card.body, COLUMNS, card)
-        self._table.pack(fill="x")
-        self._select_all = self._table.set_header_widget(
-            0,
-            lambda parent: Checkbox(
-                parent, False, self._toggle_all, background=pal.table_head
-            ),
         )
+        self._bar.buttons.addWidget(self.bought_button)
+        self._bar.buttons.addWidget(self.remove_button)
+        card.body.addWidget(self._bar)
+        self._table = DataTable(COLUMNS, card)
+        card.body.addWidget(self._table)
+        self._select_all = self._table.set_header_widget(
+            0, lambda: Checkbox(False, self._toggle_all)
+        )
+        self._layout.addWidget(card)
 
     def _tab_labels(self) -> List[str]:
         items = self._services.shopping.list_items(self._user.id)
@@ -128,6 +125,31 @@ class ShoppingScreen(tk.Frame):
 
     # --- данные ---
 
+    @property
+    def table(self) -> DataTable:
+        """Таблица позиций."""
+        return self._table
+
+    @property
+    def tabs(self) -> Segmented:
+        """Вкладки-фильтры."""
+        return self._tabs
+
+    @property
+    def bar(self) -> ActionBar:
+        """Панель действий над выбранными строками."""
+        return self._bar
+
+    @property
+    def select_all(self) -> Checkbox:
+        """Общий флажок в шапке таблицы."""
+        return self._select_all
+
+    @property
+    def selected(self) -> Set[int]:
+        """Номера выбранных позиций."""
+        return set(self._selected)
+
     def _reload(self) -> None:
         """Заново читает список и перерисовывает вкладки, панель и таблицу."""
         self._visible = self._services.shopping.list_items(
@@ -135,13 +157,17 @@ class ShoppingScreen(tk.Frame):
         )
         known = {item.id for item in self._visible}
         self._selected &= known
-        self._tabs.set_items(self._tab_labels())
-        self._table.clear()
-        if not self._visible:
-            self._table.add_message(EMPTY_TEXT)
-        for item in self._visible:
-            self._table.add_row(self._cells(item), item.id in self._selected)
-        self._update_bar()
+        self.setUpdatesEnabled(False)
+        try:
+            self._tabs.set_items(self._tab_labels())
+            self._table.clear()
+            if not self._visible:
+                self._table.add_message(EMPTY_TEXT)
+            for item in self._visible:
+                self._table.add_row(self._cells(item), item.id in self._selected)
+            self._update_bar()
+        finally:
+            self.setUpdatesEnabled(True)
 
     def _cells(self, item: ShoppingItem) -> List:
         bought = item.is_bought
@@ -159,16 +185,14 @@ class ShoppingScreen(tk.Frame):
             ),
         )
         return [
-            lambda parent: Checkbox(
-                parent,
+            lambda: Checkbox(
                 item.id in self._selected,
                 lambda value, i=item.id: self._toggle(i, value),
             ),
             name,
             TextCell(f"{format_quantity(item.quantity)} {item.unit}", muted),
             TextCell(SOURCE_LABELS[item.source], muted),
-            lambda parent: Badge(
-                parent,
+            lambda: Badge(
                 "Куплено" if bought else "Не куплено",
                 "green" if bought else "red",
             ),
@@ -182,9 +206,9 @@ class ShoppingScreen(tk.Frame):
         # занимает её (или шапка забирает обратно, когда панель скрыта).
         self._table.set_rounded_top(not count)
         if count:
-            self._bar.show(f"Выбрано: {count}", before=self._table)
+            self._bar.show_bar(f"Выбрано: {count}")
         else:
-            self._bar.hide()
+            self._bar.hide_bar()
         everything = bool(self._visible) and count == len(self._visible)
         self._select_all.set(everything)
 
@@ -225,7 +249,7 @@ class ShoppingScreen(tk.Frame):
 class AddItemDialog(Modal):
     """Окно «Добавить в список покупок»: название, количество и единица."""
 
-    def __init__(self, host: tk.Misc, services, user_id: int, on_added) -> None:
+    def __init__(self, host: QWidget, services, user_id: int, on_added) -> None:
         """Открывает окно.
 
         Args:
@@ -235,7 +259,6 @@ class AddItemDialog(Modal):
             on_added: Вызывается после добавления позиции.
         """
         super().__init__(host, DIALOG_WIDTH, on_enter=self._submit)
-        pal = palette()
         self._services = services
         self._user_id = user_id
         self._on_added = on_added
@@ -243,23 +266,24 @@ class AddItemDialog(Modal):
         self.add_text("Выберите товар из аптечки или введите новое название", bottom=16)
         names = [v.product.name for v in services.products.list_products(user_id)]
         self.name = ComboField(
-            self.body, names, "Название товара", "Введите название", required=True
+            names, "Название товара", "Введите название", required=True
         )
-        self.name.pack(fill="x", pady=(0, 8))
-        row = tk.Frame(self.body, bg=pal.card)
-        row.pack(fill="x")
-        row.columnconfigure(0, weight=1, uniform="add")
-        row.columnconfigure(1, weight=1, uniform="add")
-        self.quantity = TextField(row, "Количество", required=True)
+        self.body.addWidget(self.name)
+        self.body.addSpacing(8)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.quantity = TextField("Количество", required=True)
         self.quantity.set("1")
-        self.quantity.grid(row=0, column=0, sticky="new")
-        self.unit = Select(row, UNITS, DEFAULT_UNIT, label="Единица измерения")
-        self.unit.grid(row=0, column=1, sticky="new")
+        self.unit = Select(UNITS, DEFAULT_UNIT, label_text="Единица измерения")
+        row.addWidget(self.quantity, 1)
+        row.addWidget(self.unit, 1)
+        self.body.addLayout(row)
         buttons = self.footer()
-        Button(buttons, "Отмена", command=self.close).pack(side="left", padx=(0, 4))
-        Button(buttons, "Добавить", command=self._submit, variant="primary").pack(
-            side="left"
-        )
+        self.cancel_button = Button("Отмена", self.close_modal)
+        self.add_button = Button("Добавить", self._submit, variant="primary")
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.add_button)
         self.name.focus_field()
 
     def _submit(self) -> None:
@@ -279,5 +303,5 @@ class AddItemDialog(Modal):
             if target is not None:
                 target.set_error(error.message)
             return
-        self.close()
+        self.close_modal()
         self._on_added()

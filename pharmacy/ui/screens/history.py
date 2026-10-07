@@ -1,19 +1,22 @@
 """Экран «История» (макет Figma, экран 12): действия, сгруппированные по дням."""
 
-import tkinter as tk
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
 
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+
 from pharmacy.models import HistoryRecord
-from pharmacy.services.history_service import ACTION_LABELS
-from pharmacy.ui import labels, periods
-from pharmacy.ui.fonts import font_spec, line_height
-from pharmacy.ui.theme import SHADOW_PAD, palette
+from pharmacy.ui.fonts import line_height
 from pharmacy.ui.widgets.card import Card
+from pharmacy.ui.widgets.common import Line, clear_layout, label
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.iconbox import IconBox
 from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
+from pharmacy.services.history_service import ACTION_LABELS
+from pharmacy.ui import labels, periods
+from pharmacy.ui.theme import SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 
 if TYPE_CHECKING:
@@ -44,48 +47,64 @@ def group_by_day(records: List[HistoryRecord]) -> Dict[date, List[HistoryRecord]
     return groups
 
 
-class HistoryScreen(tk.Frame):
+class HistoryScreen(QWidget):
     """Лента действий с поиском по товару и фильтрами по действию и периоду."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell") -> None:
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+    def __init__(self, shell: "MainShell") -> None:
+        super().__init__()
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
         self._query = ""
         self._action: Optional[str] = None
         self._period = periods.WEEK
-        self._job: Optional[str] = None
-        self.bind("<Destroy>", self._on_destroy)
-        header = PageHeader(self, "История")
-        header.pack(fill="x")
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(SEARCH_DELAY_MS)
+        self._timer.timeout.connect(self._apply_search)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        header = PageHeader("История")
         gap = 8 - 2 * SHADOW_PAD
         self._search = TextField(
-            header.actions,
             placeholder="Поиск по товару…",
             leading_icon="search",
             compact=True,
             width=SEARCH_WIDTH,
             on_change=self._on_search,
         )
-        self._search.pack(side="left", padx=(0, gap))
         actions = [(None, "Все действия")] + list(ACTION_LABELS.items())
-        Select(
-            header.actions, actions, None, compact=True, on_change=self._on_action
-        ).pack(side="left", padx=(0, gap))
-        Select(
-            header.actions,
-            periods.PERIODS,
-            self._period,
-            compact=True,
-            on_change=self._on_period,
-        ).pack(side="left")
-        self._card = Card(self)
-        self._card.pack(fill="x")
+        self.action_select = Select(
+            actions, None, compact=True, on_change=self._on_action
+        )
+        self.period_select = Select(
+            periods.PERIODS, self._period, compact=True, on_change=self._on_period
+        )
+        for widget in (self._search, self.action_select, self.period_select):
+            header.actions.addWidget(widget, 0, Qt.AlignmentFlag.AlignTop)
+            header.actions.addSpacing(gap)
+        layout.addWidget(header)
+        self._card = Card()
+        self._list = QVBoxLayout()
+        self._list.setContentsMargins(0, 0, 0, 0)
+        self._list.setSpacing(0)
+        self._card.body.addLayout(self._list)
+        layout.addWidget(self._card)
+        layout.addStretch(1)
         self._reload()
 
     # --- данные ---
+
+    @property
+    def event_rows(self) -> List[QWidget]:
+        """Строки событий сверху вниз."""
+        return self._events
+
+    @property
+    def day_titles(self) -> List[str]:
+        """Заголовки дней сверху вниз."""
+        return self._titles
 
     def _records(self) -> List[HistoryRecord]:
         records = self._services.history.list_history(
@@ -100,94 +119,75 @@ class HistoryScreen(tk.Frame):
         return records
 
     def _reload(self) -> None:
-        pal = palette()
-        for child in self._card.body.winfo_children():
-            child.destroy()
-        groups = group_by_day(self._records())
-        if not groups:
-            tk.Label(
-                self._card.body,
-                text=EMPTY_TEXT,
-                bg=pal.card,
-                fg=pal.ink_3,
-                font=font_spec("body", self),
-            ).pack(pady=40)
-            return
-        for day, records in groups.items():
-            self._day(day)
-            for index, record in enumerate(records):
-                if index:
-                    tk.Frame(self._card.body, bg=pal.line_soft, height=1).pack(
-                        fill="x", padx=PADDING_X - self._card.inner_inset
-                    )
-                self._event(record)
+        self._events: List[QWidget] = []
+        self._titles: List[str] = []
+        self.setUpdatesEnabled(False)
+        try:
+            clear_layout(self._list)
+            groups = group_by_day(self._records())
+            if not groups:
+                message = label(EMPTY_TEXT, "body", "ink_3")
+                message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                message.setContentsMargins(0, 40, 0, 40)
+                self._list.addWidget(message)
+                return
+            for day, records in groups.items():
+                self._day(day)
+                for index, record in enumerate(records):
+                    if index:
+                        self._separator()
+                    self._event(record)
+        finally:
+            self.setUpdatesEnabled(True)
+
+    def _separator(self) -> None:
+        row = QHBoxLayout()
+        row.setContentsMargins(
+            PADDING_X - self._card.inner_inset, 0, PADDING_X - self._card.inner_inset, 0
+        )
+        row.addWidget(Line("line_soft"))
+        self._list.addLayout(row)
 
     def _day(self, day: date) -> None:
-        pal = palette()
-        tk.Label(
-            self._card.body,
-            text=day_title(day),
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("small_medium", self),
-            anchor="w",
-            padx=0,
-        ).pack(fill="x", padx=PADDING_X - self._card.inner_inset, pady=(12, 4))
+        title = day_title(day)
+        self._titles.append(title)
+        text = label(title, "small_medium", "ink_3")
+        text.setContentsMargins(PADDING_X - self._card.inner_inset, 12, 0, 4)
+        self._list.addWidget(text)
 
     def _event(self, record: HistoryRecord) -> None:
-        pal = palette()
-        row = tk.Frame(self._card.body, bg=pal.card)
-        row.pack(fill="x", padx=PADDING_X - self._card.inner_inset, pady=7)
-        clock = tk.Frame(
-            row, bg=pal.card, width=TIME_WIDTH, height=line_height(self, "small")
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        side = PADDING_X - self._card.inner_inset
+        layout.setContentsMargins(side, 7, side, 7)
+        layout.setSpacing(0)
+        clock = label(record.created_at[11:16], "small", "ink_3")
+        clock.setFixedSize(TIME_WIDTH, line_height("small"))
+        layout.addWidget(clock)
+        layout.addSpacing(14 - SHADOW_PAD)
+        layout.addWidget(
+            IconBox(
+                labels.HISTORY_ICONS[record.action],
+                labels.HISTORY_TONES[record.action],
+                "sm",
+            )
         )
-        clock.pack_propagate(False)
-        clock.pack(side="left", padx=(0, 14 - SHADOW_PAD))
-        tk.Label(
-            clock,
-            text=record.created_at[11:16],
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("small", self),
-            anchor="w",
-            padx=0,
-        ).pack(fill="both")
-        IconBox(
-            row,
-            labels.HISTORY_ICONS[record.action],
-            labels.HISTORY_TONES[record.action],
-            "sm",
-        ).pack(side="left", padx=(0, 14))
-        texts = tk.Frame(row, bg=pal.card)
-        texts.pack(side="left", fill="x", expand=True)
-        tk.Label(
-            texts,
-            text=ACTION_LABELS[record.action],
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("strong", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
-        tk.Label(
-            texts,
-            text=record.description,
-            bg=pal.card,
-            fg=pal.ink_2,
-            font=font_spec("small", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w", pady=(2, 0))
+        layout.addSpacing(14)
+        texts = QVBoxLayout()
+        texts.setContentsMargins(0, 0, 0, 0)
+        texts.setSpacing(2)
+        texts.addWidget(label(ACTION_LABELS[record.action], "strong"))
+        texts.addWidget(label(record.description, "small", "ink_2"))
+        layout.addLayout(texts, 1)
+        self._events.append(row)
+        self._list.addWidget(row)
 
     # --- события ---
 
     def _on_search(self) -> None:
-        if self._job is not None:
-            self.after_cancel(self._job)
-        self._job = self.after(SEARCH_DELAY_MS, self._apply_search)
+        self._timer.start()
 
     def _apply_search(self) -> None:
-        self._job = None
         self._query = self._search.get().strip()
         self._reload()
 
@@ -198,8 +198,3 @@ class HistoryScreen(tk.Frame):
     def _on_period(self, value: object) -> None:
         self._period = value
         self._reload()
-
-    def _on_destroy(self, event: tk.Event) -> None:
-        if event.widget is self and self._job is not None:
-            self.after_cancel(self._job)
-            self._job = None

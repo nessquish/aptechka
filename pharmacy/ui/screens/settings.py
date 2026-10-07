@@ -1,18 +1,20 @@
 """Экран «Настройки» (макет Figma, экран 13): профиль, пароль, уведомления, тема."""
 
-import tkinter as tk
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
 from pharmacy.errors import NotFoundError, ValidationError
-from pharmacy.ui import sections, theme
-from pharmacy.ui.fonts import font_spec
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD, palette
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.button import Button
 from pharmacy.ui.widgets.card import Card
+from pharmacy.ui.widgets.common import Line, label, recolor
 from pharmacy.ui.widgets.controls import Segmented, Toggle
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.page import PageHeader
+from pharmacy.ui import sections, theme
+from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 
 if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
@@ -28,142 +30,130 @@ SAVED = "Изменения сохранены"
 DAYS_HINT = "Предупреждать заранее"
 
 
-class SettingsScreen(tk.Frame):
+class SettingsScreen(QWidget):
     """Четыре карточки настроек и сохранение одной кнопкой."""
 
-    def __init__(self, master: tk.Misc, shell: "MainShell") -> None:
-        pal = palette()
-        super().__init__(master, bg=pal.bg)
+    def __init__(self, shell: "MainShell") -> None:
+        super().__init__()
         self._shell = shell
         self._services = shell.services
         self._user = self._services.settings.get_user(shell.user.id)
         self._fields: Dict[str, TextField] = {}
-        self._notice_job: Optional[str] = None
-        self.bind("<Destroy>", self._on_destroy)
-        self._header = PageHeader(self, "Настройки")
-        self._header.pack(fill="x")
-        Button(self._header.actions, "Отмена", command=self._cancel).pack(side="left")
-        Button(
-            self._header.actions,
-            "Сохранить изменения",
-            command=self._save,
-            variant="primary",
-        ).pack(side="left")
-        grid = tk.Frame(self, bg=pal.bg)
-        grid.pack(fill="x", pady=(18 - CARD_SHADOW_PAD - SHADOW_PAD, 0))
-        grid.columnconfigure(0, weight=1, uniform="column")
-        grid.columnconfigure(1, weight=1, uniform="column")
-        self._build_profile(grid).grid(row=0, column=0, sticky="new")
-        self._build_password(grid).grid(
-            row=0, column=1, sticky="new", padx=(CARD_GAP, 0)
+        self._notice: Optional[Badge] = None
+        self._notice_timer = QTimer(self)
+        self._notice_timer.setSingleShot(True)
+        self._notice_timer.setInterval(NOTICE_MS)
+        self._notice_timer.timeout.connect(self._hide_notice)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._header = PageHeader("Настройки")
+        self.cancel_button = Button("Отмена", command=self._cancel)
+        self.save_button = Button(
+            "Сохранить изменения", command=self._save, variant="primary"
         )
-        self._build_notifications(grid).grid(
-            row=1, column=0, sticky="new", pady=(CARD_GAP, 0)
-        )
-        self._build_appearance(grid).grid(
-            row=1, column=1, sticky="new", padx=(CARD_GAP, 0), pady=(CARD_GAP, 0)
-        )
+        self._header.actions.addWidget(self.cancel_button)
+        self._header.actions.addWidget(self.save_button)
+        layout.addWidget(self._header)
+        layout.addSpacing(18 - CARD_SHADOW_PAD - SHADOW_PAD)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(CARD_GAP)
+        grid.setVerticalSpacing(CARD_GAP)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        top = Qt.AlignmentFlag.AlignTop
+        grid.addWidget(self._build_profile(), 0, 0, top)
+        grid.addWidget(self._build_password(), 0, 1, top)
+        grid.addWidget(self._build_notifications(), 1, 0, top)
+        grid.addWidget(self._build_appearance(), 1, 1, top)
+        layout.addLayout(grid)
+        layout.addStretch(1)
         notice = shell.take_notice()
         if notice:
             self._show_notice(notice)
 
+    @property
+    def fields(self) -> Dict[str, TextField]:
+        """Текстовые поля по ключам (``username``, ``email``, ``new_password`` ...)."""
+        return self._fields
+
+    @property
+    def notice(self) -> Optional[Badge]:
+        """Плашка «Изменения сохранены», пока она показана."""
+        return self._notice
+
     # --- общие части карточек ---
 
-    def _section(self, master: tk.Misc, title: str, hint: str) -> Tuple[Card, tk.Frame]:
-        """Карточка с заголовком и пояснением. Возвращает её и рамку для содержимого."""
-        pal = palette()
-        card = Card(master)
-        inner = tk.Frame(card.body, bg=pal.card)
-        inner.pack(
-            fill="x",
-            padx=SECTION_PADDING_X - card.inner_inset,
-            pady=SECTION_PADDING_Y - card.inner_inset,
+    def _section(self, title: str, hint: str) -> Tuple[Card, QVBoxLayout]:
+        """Карточка с заголовком и пояснением. Возвращает её и раскладку содержимого."""
+        card = Card()
+        host = QWidget()
+        inner = QVBoxLayout(host)
+        inner.setContentsMargins(
+            SECTION_PADDING_X - card.inner_inset,
+            SECTION_PADDING_Y - card.inner_inset,
+            SECTION_PADDING_X - card.inner_inset,
+            SECTION_PADDING_Y - card.inner_inset,
         )
-        tk.Label(
-            inner,
-            text=title,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("section", self),
-            padx=0,
-        ).pack(anchor="w", pady=(0, 4))
-        tk.Label(
-            inner,
-            text=hint,
-            bg=pal.card,
-            fg=pal.ink_3,
-            font=font_spec("small", self),
-            padx=0,
-        ).pack(anchor="w", pady=(0, 14))
+        inner.setSpacing(0)
+        inner.addWidget(label(title, "section"))
+        inner.addSpacing(4)
+        inner.addWidget(label(hint, "small", "ink_3"))
+        inner.addSpacing(14)
+        card.body.addWidget(host)
         return card, inner
 
-    def _field(self, inner: tk.Frame, key: str, label: str, **options) -> TextField:
-        field = TextField(inner, label, **options)
-        field.pack(fill="x", pady=(0, FIELD_GAP))
+    def _field(self, inner: QVBoxLayout, key: str, title: str, **options) -> TextField:
+        field = TextField(title, **options)
+        inner.addWidget(field)
+        inner.addSpacing(FIELD_GAP)
         self._fields[key] = field
         return field
 
     def _row(
-        self, inner: tk.Frame, label: str, hint: str = "", first: bool = False
-    ) -> Tuple[tk.Frame, Optional[tk.Label]]:
+        self, inner: QVBoxLayout, title: str, hint: str = "", first: bool = False
+    ) -> Tuple[QHBoxLayout, Optional[QLabel]]:
         """Строка настройки: слева название и пояснение, справа элемент управления.
 
         Returns:
-            Рамка строки (в неё кладётся элемент управления) и подпись-пояснение.
+            Раскладка строки (в неё кладётся элемент управления) и подпись-пояснение.
         """
-        pal = palette()
         if not first:
-            tk.Frame(inner, bg=pal.line_soft, height=1).pack(fill="x")
-        row = tk.Frame(inner, bg=pal.card)
-        row.pack(fill="x", pady=9)
-        texts = tk.Frame(row, bg=pal.card)
-        texts.pack(side="left")
-        tk.Label(
-            texts,
-            text=label,
-            bg=pal.card,
-            fg=pal.ink,
-            font=font_spec("body", self),
-            padx=0,
-            pady=0,
-        ).pack(anchor="w")
+            inner.addWidget(Line("line_soft"))
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 9, 0, 9)
+        row.setSpacing(0)
+        texts = QVBoxLayout()
+        texts.setContentsMargins(0, 0, 0, 0)
+        texts.setSpacing(0)
+        texts.addWidget(label(title))
         note = None
         if hint:
-            note = tk.Label(
-                texts,
-                text=hint,
-                bg=pal.card,
-                fg=pal.ink_3,
-                font=font_spec("caption", self),
-                padx=0,
-                pady=0,
-            )
-            note.pack(anchor="w", pady=(2, 0))
+            texts.addSpacing(2)
+            note = label(hint, "caption", "ink_3")
+            texts.addWidget(note)
+        row.addLayout(texts)
+        row.addStretch(1)
+        inner.addLayout(row)
         return row, note
 
-    def _caption(self, row: tk.Frame, text: str) -> None:
+    @staticmethod
+    def _caption(row: QHBoxLayout, text: str) -> None:
         """Слово рядом с полем числа («за» и «дней»)."""
-        pal = palette()
-        tk.Label(
-            row,
-            text=text,
-            bg=pal.card,
-            fg=pal.ink_2,
-            font=font_spec("body", self),
-            padx=0,
-        ).pack(side="right")
+        row.addWidget(label(text, "body", "ink_2"))
 
     # --- карточки ---
 
-    def _build_profile(self, master: tk.Misc) -> Card:
-        card, inner = self._section(master, "Профиль", "Данные вашей учётной записи")
+    def _build_profile(self) -> Card:
+        card, inner = self._section("Профиль", "Данные вашей учётной записи")
         self._field(inner, "username", "Имя пользователя").set(self._user.username)
         self._field(inner, "login", "Логин", readonly=True).set(self._user.login)
         self._field(inner, "email", "Электронная почта").set(self._user.email)
         return card
 
-    def _build_password(self, master: tk.Misc) -> Card:
-        card, inner = self._section(master, "Смена пароля", "Не менее 8 символов")
+    def _build_password(self) -> Card:
+        card, inner = self._section("Смена пароля", "Не менее 8 символов")
         # Текущий пароль только показывается (значок «глаз»), изменить его здесь
         # нельзя. Он известен лишь из входа в этом сеансе: в базе только хэш.
         current = self._field(
@@ -191,64 +181,94 @@ class SettingsScreen(tk.Frame):
         )
         return card
 
-    def _build_notifications(self, master: tk.Misc) -> Card:
+    def _build_notifications(self) -> Card:
         card, inner = self._section(
-            master, "Уведомления", "Когда приложение должно предупреждать"
+            "Уведомления", "Когда приложение должно предупреждать"
         )
         row, _ = self._row(inner, "Срок годности истёк", first=True)
-        self._expired = Toggle(row, self._user.notify_expired)
-        self._expired.pack(side="right")
+        self._expired = Toggle(self._user.notify_expired)
+        row.addWidget(self._expired)
 
         row, self._days_hint = self._row(inner, "Скоро истекает срок", DAYS_HINT)
-        self._caption(row, "дней")
+        self._caption(row, "за")
         self._days = TextField(
-            row,
             width=DAYS_FIELD_WIDTH,
             justify="center",
             on_change=self._days_edited,
         )
         self._days.set(str(self._user.warning_days))
-        self._days.pack(side="right", padx=4)
-        self._caption(row, "за")
+        row.addSpacing(4)
+        row.addWidget(self._days)
+        row.addSpacing(4)
+        self._caption(row, "дней")
 
         row, _ = self._row(inner, "Низкий остаток", "Когда количество ≤ минимального")
-        self._low = Toggle(row, self._user.notify_low_stock)
-        self._low.pack(side="right")
+        self._low = Toggle(self._user.notify_low_stock)
+        row.addWidget(self._low)
         return card
 
-    def _build_appearance(self, master: tk.Misc) -> Card:
-        card, inner = self._section(master, "Оформление", "Внешний вид приложения")
+    def _build_appearance(self) -> Card:
+        card, inner = self._section("Оформление", "Внешний вид приложения")
         row, _ = self._row(inner, "Тема", first=True)
         names = [name for _key, name in THEMES]
         current = [key for key, _name in THEMES].index(self._user.theme)
         self._theme = Segmented(
-            row,
             names,
             current,
             # Тема применяется сразу, без кнопки «Сохранить изменения».
             lambda index: self._shell.set_theme(THEMES[index][0]),
             variant="outline",
         )
-        self._theme.pack(side="right")
+        row.addWidget(self._theme)
 
         row, _ = self._row(inner, "Размер текста")
         sizes = list(theme.TEXT_SIZES)
         self._text_size = Segmented(
-            row,
             [theme.TEXT_SIZES[key][0] for key in sizes],
             sizes.index(theme.text_size_name()),
             # Как и тема, размер текста применяется сразу.
             lambda index: self._shell.set_text_size(sizes[index]),
             variant="outline",
         )
-        self._text_size.pack(side="right")
+        row.addWidget(self._text_size)
         return card
+
+    @property
+    def theme_switch(self) -> Segmented:
+        """Выбор темы."""
+        return self._theme
+
+    @property
+    def text_size_switch(self) -> Segmented:
+        """Выбор размера текста."""
+        return self._text_size
+
+    @property
+    def days_field(self) -> TextField:
+        """Поле «за сколько дней предупреждать»."""
+        return self._days
+
+    @property
+    def days_hint(self) -> QLabel:
+        """Пояснение под «Скоро истекает срок» (показывает и ошибку поля)."""
+        return self._days_hint
+
+    @property
+    def expired_toggle(self) -> Toggle:
+        """Переключатель «Срок годности истёк»."""
+        return self._expired
+
+    @property
+    def low_toggle(self) -> Toggle:
+        """Переключатель «Низкий остаток»."""
+        return self._low
 
     # --- сохранение ---
 
     def _days_edited(self) -> None:
         self._days.clear_error()
-        self._days_hint.configure(text=DAYS_HINT, fg=palette().ink_3)
+        self._days_hint.setText(DAYS_HINT)
+        recolor(self._days_hint, "ink_3")
 
     def _clear_errors(self) -> None:
         for field in self._fields.values():
@@ -301,7 +321,8 @@ class SettingsScreen(tk.Frame):
     def _show_error(self, error: ValidationError) -> None:
         if error.field == "warning_days":
             self._days.set_error()
-            self._days_hint.configure(text=error.message, fg=palette().red)
+            self._days_hint.setText(error.message)
+            recolor(self._days_hint, "red")
             return
         field = self._fields.get(error.field or "")
         if field is not None:
@@ -314,12 +335,13 @@ class SettingsScreen(tk.Frame):
     # --- уведомление «сохранено» ---
 
     def _show_notice(self, text: str) -> None:
-        actions = self._header.actions
-        badge = Badge(actions, text, "green", icon="check")
-        badge.pack(side="left", before=actions.winfo_children()[0], padx=(0, 10))
-        self._notice_job = self.after(NOTICE_MS, badge.destroy)
+        self._notice = Badge(text, "green", icon="check")
+        self._header.actions.insertWidget(0, self._notice)
+        self._header.actions.insertSpacing(1, 10)
+        self._notice_timer.start()
 
-    def _on_destroy(self, event: tk.Event) -> None:
-        if event.widget is self and self._notice_job is not None:
-            self.after_cancel(self._notice_job)
-            self._notice_job = None
+    def _hide_notice(self) -> None:
+        if self._notice is not None:
+            self._notice.setVisible(False)
+            self._notice.deleteLater()
+            self._notice = None
