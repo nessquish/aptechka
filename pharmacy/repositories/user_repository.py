@@ -76,6 +76,20 @@ class UserRepository(BaseRepository):
         )
         return _to_user(row) if row else None
 
+    def get_by_email(self, email: str) -> Optional[User]:
+        """Находит пользователя по почте без учёта регистра букв.
+
+        Args:
+            email: Электронная почта.
+
+        Returns:
+            Пользователь или None, если такой почты нет.
+        """
+        row = self.db.fetch_one(
+            "SELECT * FROM users WHERE email = ? COLLATE NOCASE", (email,)
+        )
+        return _to_user(row) if row else None
+
     def email_exists(self, email: str) -> bool:
         """Проверяет, зарегистрирована ли уже такая почта (без учёта регистра)."""
         row = self.db.fetch_one(

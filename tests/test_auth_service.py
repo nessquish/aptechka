@@ -84,6 +84,32 @@ class LoginTest(AuthServiceTestCase):
         self.register(login="Anna")
         self.assertEqual(self.auth.login("  anna ", "password1").login, "Anna")
 
+    def test_login_by_email(self):
+        self.register(login="Anna")
+        user = self.auth.login("anna@mail.ru", "password1")
+        self.assertEqual(user.login, "Anna")
+
+    def test_email_ignores_case_and_spaces(self):
+        self.register(login="Anna")
+        self.assertEqual(self.auth.login("  ANNA@Mail.RU ", "password1").login, "Anna")
+
+    def test_wrong_email_or_password_gives_the_same_message(self):
+        self.register()
+        for email, password in (("nobody@mail.ru", "password1"), ("anna@mail.ru", "x")):
+            with self.assertRaises(AuthenticationError) as ctx:
+                self.auth.login(email, password)
+            self.assertEqual(str(ctx.exception), "Неверный логин или пароль")
+
+    def test_email_of_another_user_does_not_open_this_account(self):
+        self.register()
+        with self.assertRaises(AuthenticationError):
+            self.auth.login("anna@mail.ru", "other-password1")
+
+    def test_empty_login_message_mentions_email(self):
+        with self.assertRaises(ValidationError) as ctx:
+            self.auth.login("  ", "password1")
+        self.assertEqual(ctx.exception.message, "Введите логин или эл. почту")
+
     def test_wrong_password(self):
         self.register()
         with self.assertRaises(AuthenticationError):

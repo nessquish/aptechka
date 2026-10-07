@@ -16,7 +16,12 @@ from pharmacy.ui.widgets.common import label, pad
 from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.link import Link
 from pharmacy.ui import theme
-from pharmacy.ui.field_check import LiveCheck, email_error, login_error
+from pharmacy.ui.field_check import (
+    LiveCheck,
+    email_error,
+    login_error,
+    login_or_email_error,
+)
 from pharmacy.ui.theme import SHADOW_PAD, palette
 
 if TYPE_CHECKING:
@@ -217,15 +222,20 @@ class LoginScreen(_AuthScreen):
             padding_y=30,
             header_gaps=(18, 6, 20),
         )
-        self._add_field("login", TextField("Логин"), gap=8)
+        self._add_field("login", TextField("Логин / Эл. почта"), gap=8)
         self._add_field("password", TextField("Пароль", password=True), gap=8)
         self._add_footer(
             "Войти", "Нет аккаунта?", "Зарегистрироваться", app.show_register
         )
+        # Вход по логину или по почте на выбор: поле краснеет, если там ни то ни другое.
+        self._login_check = LiveCheck(self._fields["login"], login_or_email_error)
         self._fields["login"].focus_field()
 
     def _submit(self) -> None:
         self._reset_errors()
+        if not self._login_check.check():
+            self._fields["login"].focus_field()
+            return
         password = self._fields["password"].get()
         try:
             user = self._app.services.auth.login(self._fields["login"].get(), password)
@@ -233,6 +243,8 @@ class LoginScreen(_AuthScreen):
             self._show_validation_error(error)
         except AuthenticationError as error:
             self._show_banner(str(error))
+            # Неизвестно, что именно неверно, поэтому красными становятся оба поля.
+            self._fields["login"].set_error()
             self._fields["password"].set_error()
         else:
             self._app.sign_in(user, password)

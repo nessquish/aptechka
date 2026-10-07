@@ -65,10 +65,11 @@ class AuthService:
         return self._require_user(user_id)
 
     def login(self, login: str, password: str) -> User:
-        """Проверяет логин и пароль.
+        """Проверяет логин (или почту) и пароль.
 
         Args:
-            login: Логин.
+            login: Логин или адрес электронной почты на выбор пользователя.
+                В логине не бывает «@», поэтому они не путаются.
             password: Пароль.
 
         Returns:
@@ -82,10 +83,13 @@ class AuthService:
         """
         login = login.strip()
         if not login:
-            raise ValidationError("Введите логин", "login")
+            raise ValidationError("Введите логин или эл. почту", "login")
         if not password:
             raise ValidationError("Введите пароль", "password")
-        user = self._users.get_by_login(login)
+        if "@" in login:
+            user = self._users.get_by_email(login)
+        else:
+            user = self._users.get_by_login(login)
         if user is None or not verify_password(password, user.password_hash):
             raise AuthenticationError("Неверный логин или пароль")
         return user

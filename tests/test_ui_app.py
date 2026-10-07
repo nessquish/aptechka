@@ -2,13 +2,13 @@
 
 import unittest
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QLabel, QWidget
 from shiboken6 import isValid
 
 from pharmacy.ui import theme
 from pharmacy.ui.screens.auth import LoginScreen, RegisterScreen
 from pharmacy.ui.screens.shell import MainShell
-from tests.qt_helpers import AppTestCase, click, settle, type_text
+from tests.qt_helpers import AppTestCase, click, find_all, settle, type_text
 
 
 class LoginScreenTest(AppTestCase):
@@ -37,11 +37,17 @@ class LoginScreenTest(AppTestCase):
         self.assertEqual(self.screen._banner.text, "Неверный логин или пароль")
         self.assertTrue(self.screen._banner.isVisible())
         self.assertIsNotNone(self.screen._fields["password"].error)
+        self.assertIsNotNone(self.screen._fields["login"].error)  # логин тоже красный
+        self.assertEqual(
+            self.screen._fields["login"].frame_colors()[0], theme.LIGHT.red
+        )
         self.assertIsNone(self.app.user)
 
     def test_empty_login_marks_login_field(self):
         self.fill("", "password1")
-        self.assertEqual(self.screen._fields["login"].error, "Введите логин")
+        self.assertEqual(
+            self.screen._fields["login"].error, "Введите логин или эл. почту"
+        )
 
     def test_empty_password_marks_password_field(self):
         self.fill("anna", "")
@@ -58,6 +64,72 @@ class LoginScreenTest(AppTestCase):
         self.screen._reset_errors()
         self.assertFalse(self.screen._banner.isVisible())
         self.assertEqual(self.screen._banner.text, "")
+
+    def test_field_is_called_login_or_email(self):
+        texts = [w.text() for w in find_all(self.screen, QLabel)]
+        self.assertIn("Логин / Эл. почта", texts)
+
+    def test_can_sign_in_with_the_email_instead_of_the_login(self):
+        self.fill("anna@mail.ru", "password1")
+        self.assertEqual(self.app.user.login, "anna")
+        self.assertIsInstance(self.screen, MainShell)
+
+    def test_email_is_matched_ignoring_case_and_spaces(self):
+        self.fill("  Anna@Mail.RU ", "password1")
+        self.assertIsInstance(self.screen, MainShell)
+
+    def test_wrong_email_or_password_marks_both_fields(self):
+        for login, password in (("nobody@mail.ru", "password1"), ("anna@mail.ru", "x")):
+            self.app.show_login()
+            self.settle()
+            self.fill(login, password)
+            self.assertIsInstance(self.screen, LoginScreen)
+            self.assertIsNotNone(self.screen._fields["login"].error, login)
+            self.assertIsNotNone(self.screen._fields["password"].error, login)
+            self.assertEqual(self.screen._banner.text, "Неверный логин или пароль")
+
+    def test_malformed_email_is_marked_when_leaving_the_field(self):
+        field = self.screen._fields["login"]
+        type_text(field.entry, "anna@mail")
+        self.assertIsNone(field.error)
+        field.entry.focus_changed.emit(False)
+        self.assertEqual(
+            field.error, "Введите корректный email, например user@gmail.com"
+        )
+
+    def test_bad_login_is_marked_when_leaving_the_field(self):
+        field = self.screen._fields["login"]
+        type_text(field.entry, "ab")
+        field.entry.focus_changed.emit(False)
+        self.assertIn("от 3 до 30 символов", field.error)
+
+    def test_good_login_or_email_is_not_marked(self):
+        for text in ("anna", "anna@mail.ru"):
+            self.app.show_login()
+            self.settle()
+            field = self.screen._fields["login"]
+            type_text(field.entry, text)
+            field.entry.focus_changed.emit(False)
+            self.assertIsNone(field.error, text)
+
+    def test_empty_field_is_marked_when_leaving_it(self):
+        field = self.screen._fields["login"]
+        field.entry.focus_changed.emit(False)
+        self.assertEqual(field.error, "Введите логин или эл. почту")
+
+    def test_error_goes_away_when_the_value_is_fixed(self):
+        field = self.screen._fields["login"]
+        type_text(field.entry, "ab")
+        field.entry.focus_changed.emit(False)
+        type_text(field.entry, "c")
+        self.assertIsNone(field.error)
+
+    def test_bad_format_does_not_reach_the_service(self):
+        self.screen._fields["login"].set("anna@mail")
+        self.screen._fields["password"].set("password1")
+        self.screen._submit()
+        self.assertIsNone(self.app.user)
+        self.assertIsNotNone(self.screen._fields["login"].error)
 
     def test_link_opens_registration(self):
         click(self.screen.switch_link)
