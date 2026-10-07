@@ -20,12 +20,9 @@ from pharmacy.services.status import (
 )
 from pharmacy.utils.dates import days_until, parse_user_date
 from pharmacy.utils.formatting import format_quantity
-
-# Единицы измерения для выпадающего списка в форме товара.
-UNITS = ("упак.", "шт.", "фл.", "мл", "г", "табл.")
+from pharmacy.utils.units import normalize_unit
 
 MAX_NAME_LENGTH = 100
-MAX_UNIT_LENGTH = 20
 MAX_SHORT_TEXT_LENGTH = 100
 MAX_LONG_TEXT_LENGTH = 500
 MAX_AMOUNT = 1_000_000
@@ -134,13 +131,13 @@ def _describe_changes(old: Product, new: ProductData) -> str:
     parts = []
     if old.quantity != new.quantity:
         parts.append(
-            f"количество изменено с {format_quantity(old.quantity)}"
-            f" до {format_quantity(new.quantity)}"
+            f"количество изменено с {format_quantity(old.quantity)} {old.unit}"
+            f" до {format_quantity(new.quantity)} {new.unit}"
         )
     if old.min_quantity != new.min_quantity:
         parts.append(
             f"минимальный остаток изменён с {format_quantity(old.min_quantity)}"
-            f" до {format_quantity(new.min_quantity)}"
+            f" {old.unit} до {format_quantity(new.min_quantity)} {new.unit}"
         )
     other = [
         label
@@ -372,10 +369,8 @@ class ProductService:
         if form.category_id is None or self._categories.get(form.category_id) is None:
             raise ValidationError("Выберите категорию", "category_id")
         quantity = _parse_amount(form.quantity, "quantity", "Введите количество")
-        unit = form.unit.strip()
-        if not unit:
-            raise ValidationError("Выберите единицу измерения", "unit")
-        unit = _check_length(unit, MAX_UNIT_LENGTH, "Единица измерения", "unit")
+        # Единица не указана: «шт.»; разные написания сводятся к одному.
+        unit = normalize_unit(form.unit)
         min_quantity = _parse_amount(form.min_quantity, "min_quantity", None)
         return ProductData(
             name=name,

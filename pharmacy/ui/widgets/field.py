@@ -11,6 +11,7 @@ from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QKeySequence, QPainter
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMenu,
     QPlainTextEdit,
@@ -110,6 +111,7 @@ class LabeledBox(QWidget):
         self._border = pal.line if compact else pal.input_line
         self._focused = False
         self._error: Optional[str] = None
+        self._title: Optional[QLabel] = None
         self._box_height = height
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -136,11 +138,22 @@ class LabeledBox(QWidget):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(RING_PAD, 0, RING_PAD, 5 - RING_PAD)
         layout.setSpacing(0)
-        layout.addWidget(label(text, "label", "ink_2"))
+        self._title = label(text, "label", "ink_2")
+        layout.addWidget(self._title)
         if required:
             layout.addWidget(label(" *", "label", "red"))
         layout.addStretch(1)
         return row
+
+    @property
+    def title(self) -> str:
+        """Подпись над полем (пустая, если подписи нет)."""
+        return self._title.text() if self._title is not None else ""
+
+    def set_title(self, text: str) -> None:
+        """Меняет подпись над полем (например, добавляет единицу измерения)."""
+        if self._title is not None:
+            self._title.setText(text)
 
     def set_width(self, width: int) -> None:
         """Фиксирует ширину рамки (без полей под тень)."""

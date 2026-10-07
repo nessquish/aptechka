@@ -18,10 +18,10 @@ from pharmacy.ui.widgets.field import TextField
 from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
 from pharmacy.ui.widgets.table import Column, DataTable, TextCell
-from pharmacy.services.product_service import UNITS
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
+from pharmacy.utils.units import DEFAULT_UNIT, UNITS
 
 if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
@@ -41,7 +41,6 @@ COLUMNS = (
 )
 EMPTY_TEXT = "Список покупок пуст. Добавьте товар вручную или из уведомления."
 DIALOG_WIDTH = 440
-DEFAULT_UNIT = "шт."
 
 
 def _created(item: ShoppingItem) -> str:

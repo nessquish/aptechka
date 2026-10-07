@@ -116,7 +116,7 @@ class DialogContentTest(AddProductTestCase):
     def test_defaults(self):
         dialog = self.open_dialog()
         self.assertIsNotNone(dialog.fields["category_id"].get())
-        self.assertEqual(dialog.fields["unit"].get(), "упак.")
+        self.assertEqual(dialog.fields["unit"].get(), "шт.")
         self.assertEqual(dialog.fields["name"].get(), "")
 
     def test_dialog_fits_into_the_window(self):

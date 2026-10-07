@@ -177,7 +177,7 @@ def seed_demo(db: Database) -> Optional[int]:
                     user_id,
                     product_ids["Парацетамол"],
                     "product_updated",
-                    "Парацетамол · количество изменено с 5 до 10",
+                    "Парацетамол · количество изменено с 5 упак. до 10 упак.",
                     _timestamp(2, "18:32:00"),
                 ),
                 (

@@ -10,13 +10,11 @@ from pharmacy.repositories.product_repository import ProductRepository
 from pharmacy.repositories.shopping_repository import ShoppingRepository
 from pharmacy.services.product_service import (
     MAX_NAME_LENGTH,
-    MAX_UNIT_LENGTH,
     _check_length,
     _parse_amount,
 )
 from pharmacy.utils.formatting import format_quantity
-
-DEFAULT_UNIT = "шт."
+from pharmacy.utils.units import DEFAULT_UNIT, normalize_unit
 
 
 def _describe(item: ShoppingItem) -> str:
@@ -65,7 +63,7 @@ class ShoppingService:
         amount = _parse_amount(quantity or "1", "quantity", None)
         if amount <= 0:
             raise ValidationError("Количество должно быть больше нуля", "quantity")
-        unit = _check_length(unit, MAX_UNIT_LENGTH, "Единица", "unit") or DEFAULT_UNIT
+        unit = normalize_unit(unit)
         return self._add(user_id, name, amount, unit, ShoppingSource.MANUAL, None)
 
     def add_from_product(

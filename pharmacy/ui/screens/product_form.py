@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from pharmacy.errors import NotFoundError, ValidationError
 from pharmacy.services.container import Services
-from pharmacy.services.product_service import UNITS, ProductForm, ProductView
+from pharmacy.services.product_service import ProductForm, ProductView
 from pharmacy.ui import sections
 from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
 from pharmacy.ui.widgets.button import Button
@@ -21,6 +21,7 @@ from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
+from pharmacy.utils.units import DEFAULT_UNIT, UNITS
 
 if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
@@ -50,36 +51,60 @@ def make_fields(services: Services, change: Callable[[], None]) -> Dict[str, QWi
     def text(title: str, **options) -> TextField:
         return TextField(title, on_change=change, **options)
 
-    return {
-        "name": text("Название", placeholder="Введите название", required=True),
-        "category_id": Select(
-            categories,
-            categories[0][0] if categories else None,
-            label_text="Категория",
-            required=True,
-            on_change=lambda _value: change(),
-        ),
-        "quantity": text("Количество", placeholder="0", required=True),
-        "unit": Select(
-            UNITS,
-            UNITS[0],
-            label_text="Единица измерения",
-            required=True,
-            on_change=lambda _value: change(),
-        ),
-        "expiry_date": text(
-            "Срок годности", placeholder="ДД.ММ.ГГГГ", trailing_icon="calendar"
-        ),
-        "storage_place": text("Место хранения", placeholder="Например: шкаф, кухня"),
-        "min_quantity": text(
-            "Минимальный остаток",
-            placeholder="При меньшем количестве придёт уведомление",
-        ),
-        "indications": text(
-            "Показания / назначение", placeholder="Например: жаропонижающее"
-        ),
-        "note": text("Примечание", placeholder="Введите примечание", multiline=True),
-    }
+    fields: Dict[str, QWidget] = {}
+
+    def unit_picked(_value: object) -> None:
+        show_units(fields)
+        change()
+
+    fields.update(
+        {
+            "name": text("Название", placeholder="Введите название", required=True),
+            "category_id": Select(
+                categories,
+                categories[0][0] if categories else None,
+                label_text="Категория",
+                required=True,
+                on_change=lambda _value: change(),
+            ),
+            "quantity": text("Количество", placeholder="0", required=True),
+            "unit": Select(
+                UNITS,
+                DEFAULT_UNIT,
+                label_text="Единица измерения",
+                required=True,
+                on_change=unit_picked,
+            ),
+            "expiry_date": text(
+                "Срок годности", placeholder="ДД.ММ.ГГГГ", trailing_icon="calendar"
+            ),
+            "storage_place": text(
+                "Место хранения", placeholder="Например: шкаф, кухня"
+            ),
+            "min_quantity": text(
+                "Минимальный остаток",
+                placeholder="При меньшем количестве придёт уведомление",
+            ),
+            "indications": text(
+                "Показания / назначение", placeholder="Например: жаропонижающее"
+            ),
+            "note": text(
+                "Примечание", placeholder="Введите примечание", multiline=True
+            ),
+        }
+    )
+    show_units(fields)
+    return fields
+
+
+def show_units(fields: Dict[str, QWidget]) -> None:
+    """Дописывает выбранную единицу к подписям «Количество» и «Минимальный остаток».
+
+    Так рядом с числом всегда видно, в чём оно измеряется.
+    """
+    unit = fields["unit"].get() or DEFAULT_UNIT
+    fields["quantity"].set_title(f"Количество ({unit})")
+    fields["min_quantity"].set_title(f"Минимальный остаток ({unit})")
 
 
 def read_form(fields: Dict[str, QWidget]) -> ProductForm:
@@ -312,6 +337,7 @@ class ProductFormScreen(QWidget):
         self._fields["category_id"].set(product.category_id)
         self._fields["quantity"].set(format_quantity(product.quantity))
         self._fields["unit"].set(product.unit)
+        show_units(self._fields)
         self._fields["expiry_date"].set(
             format_user_date(product.expiry_date) if product.expiry_date else ""
         )

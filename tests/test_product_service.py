@@ -8,6 +8,7 @@ from pharmacy.models import HistoryAction
 from pharmacy.repositories.history_repository import HistoryRepository
 from pharmacy.services.product_service import ProductForm, ProductService
 from pharmacy.services.status import ProductStatus
+from pharmacy.utils.units import UNITS
 from tests.helpers import DatabaseTestCase
 
 TODAY = date(2026, 10, 1)
@@ -119,8 +120,31 @@ class ValidationTest(ProductServiceTestCase):
     def test_huge_quantity_rejected(self):
         self.assert_invalid("quantity", quantity="1e9")
 
-    def test_unit_required(self):
-        self.assert_invalid("unit", unit="  ")
+    def test_missing_unit_defaults_to_pieces(self):
+        for empty in ("", "   "):
+            self.assertEqual(self.add(unit=empty).product.unit, "шт.")
+
+    def test_unit_outside_the_list_is_rejected(self):
+        for unit in ("кубометров", "штуковин", "xyz"):
+            self.assert_invalid("unit", unit=unit)
+
+    def test_different_spellings_become_one_unit(self):
+        cases = {
+            "таб": "табл.",
+            "Таблетки": "табл.",
+            "ТАБЛ.": "табл.",
+            "шт": "шт.",
+            "упаковка": "упак.",
+            "гр": "г",
+            "МЛ": "мл",
+            "мг": "мг",
+        }
+        for written, saved in cases.items():
+            self.assertEqual(self.add(unit=written).product.unit, saved, written)
+
+    def test_every_listed_unit_is_accepted(self):
+        for unit in UNITS:
+            self.assertEqual(self.add(unit=unit).product.unit, unit)
 
     def test_negative_minimum_rejected(self):
         self.assert_invalid("min_quantity", min_quantity="-2")
@@ -155,8 +179,31 @@ class UpdateProductTest(ProductServiceTestCase):
         latest = self.history.list_for_user(self.user_id)[0]
         self.assertEqual(latest.action, HistoryAction.PRODUCT_UPDATED)
         self.assertEqual(
-            latest.description, "Парацетамол · количество изменено с 5 до 10"
+            latest.description,
+            "Парацетамол · количество изменено с 5 упак. до 10 упак.",
         )
+
+    def test_minimum_change_is_described_with_the_unit(self):
+        view = self.add(name="Бинт", unit="шт.", min_quantity="1")
+        self.service.update_product(
+            self.user_id,
+            view.product.id,
+            self.form(name="Бинт", unit="шт.", min_quantity="3"),
+        )
+        latest = self.history.list_for_user(self.user_id)[0]
+        self.assertIn(
+            "минимальный остаток изменён с 1 шт. до 3 шт.", latest.description
+        )
+
+    def test_unit_change_is_shown_next_to_the_numbers(self):
+        view = self.add(name="Сироп", unit="мл", quantity="100")
+        self.service.update_product(
+            self.user_id,
+            view.product.id,
+            self.form(name="Сироп", unit="фл.", quantity="2"),
+        )
+        latest = self.history.list_for_user(self.user_id)[0]
+        self.assertIn("количество изменено с 100 мл до 2 фл.", latest.description)
 
     def test_other_changes_listed_by_field_name(self):
         view = self.add()
