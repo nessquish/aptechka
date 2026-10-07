@@ -14,6 +14,13 @@ from pharmacy.utils.validation import (
     validate_username,
 )
 
+NO_ACCOUNT = "Аккаунт с таким логином или почтой не найден"
+WRONG_PASSWORD = "Неверный пароль"
+
+
+NO_ACCOUNT = "Аккаунт с таким логином или почтой не найден"
+WRONG_PASSWORD = "Неверный пароль"
+
 
 class AuthService:
     """Правила работы с учётными записями."""
@@ -77,9 +84,8 @@ class AuthService:
 
         Raises:
             ValidationError: Если логин или пароль не введены.
-            AuthenticationError: Если логин или пароль неверны. Сообщение
-                одинаковое в обоих случаях, чтобы нельзя было узнать,
-                существует ли такой логин.
+            AuthenticationError: Если аккаунта нет (поле ``login``) или пароль
+                не подошёл (поле ``password``): интерфейс подсвечивает это поле.
         """
         login = login.strip()
         if not login:
@@ -90,8 +96,10 @@ class AuthService:
             user = self._users.get_by_email(login)
         else:
             user = self._users.get_by_login(login)
-        if user is None or not verify_password(password, user.password_hash):
-            raise AuthenticationError("Неверный логин или пароль")
+        if user is None:
+            raise AuthenticationError(NO_ACCOUNT, "login")
+        if not verify_password(password, user.password_hash):
+            raise AuthenticationError(WRONG_PASSWORD, "password")
         return user
 
     def change_password(

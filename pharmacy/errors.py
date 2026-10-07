@@ -32,7 +32,22 @@ class ValidationError(AppError):
 
 
 class AuthenticationError(AppError):
-    """Неверный логин или пароль."""
+    """Вход не удался: аккаунт не найден или пароль неверный.
+
+    Attributes:
+        field: Поле формы, в котором ошибка: ``login`` (такого аккаунта нет)
+            или ``password`` (аккаунт найден, пароль не подошёл).
+    """
+
+    def __init__(self, message: str, field: Optional[str] = None) -> None:
+        """Создаёт ошибку входа.
+
+        Args:
+            message: Текст для пользователя.
+            field: Имя поля формы, которое нужно подсветить.
+        """
+        super().__init__(message)
+        self.field = field
 
 
 class NotFoundError(AppError):

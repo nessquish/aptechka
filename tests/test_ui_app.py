@@ -34,14 +34,38 @@ class LoginScreenTest(AppTestCase):
     def test_wrong_password_shows_banner_and_marks_password(self):
         self.fill("anna", "wrong-password")
         self.assertIsInstance(self.screen, LoginScreen)
-        self.assertEqual(self.screen._banner.text, "Неверный логин или пароль")
+        self.assertEqual(self.screen._banner.text, "Неверный пароль")
         self.assertTrue(self.screen._banner.isVisible())
         self.assertIsNotNone(self.screen._fields["password"].error)
-        self.assertIsNotNone(self.screen._fields["login"].error)  # логин тоже красный
+        # Аккаунт найден, поэтому логин не подсвечивается.
+        self.assertIsNone(self.screen._fields["login"].error)
         self.assertEqual(
+            self.screen._fields["password"].frame_colors()[0], theme.LIGHT.red
+        )
+        self.assertNotEqual(
             self.screen._fields["login"].frame_colors()[0], theme.LIGHT.red
         )
         self.assertIsNone(self.app.user)
+
+    def test_known_email_with_wrong_password_marks_only_the_password(self):
+        self.fill("anna@mail.ru", "wrong-password")
+        self.assertEqual(self.screen._banner.text, "Неверный пароль")
+        self.assertIsNone(self.screen._fields["login"].error)
+        self.assertIsNotNone(self.screen._fields["password"].error)
+
+    def test_unknown_login_or_email_marks_only_the_login(self):
+        for text in ("nobody", "nobody@mail.ru"):
+            self.app.show_login()
+            self.settle()
+            self.fill(text, "password1")
+            self.assertEqual(
+                self.screen._banner.text, "Аккаунт с таким логином или почтой не найден"
+            )
+            self.assertIsNotNone(self.screen._fields["login"].error, text)
+            self.assertIsNone(self.screen._fields["password"].error, text)
+            self.assertEqual(
+                self.screen._fields["login"].frame_colors()[0], theme.LIGHT.red
+            )
 
     def test_empty_login_marks_login_field(self):
         self.fill("", "password1")
@@ -78,16 +102,6 @@ class LoginScreenTest(AppTestCase):
         self.fill("  Anna@Mail.RU ", "password1")
         self.assertIsInstance(self.screen, MainShell)
 
-    def test_wrong_email_or_password_marks_both_fields(self):
-        for login, password in (("nobody@mail.ru", "password1"), ("anna@mail.ru", "x")):
-            self.app.show_login()
-            self.settle()
-            self.fill(login, password)
-            self.assertIsInstance(self.screen, LoginScreen)
-            self.assertIsNotNone(self.screen._fields["login"].error, login)
-            self.assertIsNotNone(self.screen._fields["password"].error, login)
-            self.assertEqual(self.screen._banner.text, "Неверный логин или пароль")
-
     def test_nothing_is_red_while_typing_or_leaving_the_fields(self):
         # Как в большинстве приложений: вход проверяется только по кнопке.
         for text in ("ab", "anna@mail", "my login", ""):
@@ -108,13 +122,12 @@ class LoginScreenTest(AppTestCase):
             self.fill(text, "password1")
             self.assertIsInstance(self.screen, LoginScreen)
             self.assertEqual(
-                self.screen._banner.text, "Неверный логин или пароль", text
+                self.screen._banner.text, "Аккаунт с таким логином или почтой не найден"
             )
             self.assertIsNotNone(self.screen._fields["login"].error, text)
-            self.assertIsNotNone(self.screen._fields["password"].error, text)
 
     def test_red_fields_clear_when_the_user_types_again(self):
-        self.fill("anna", "wrong-password")
+        self.fill("nobody", "password1")
         self.assertIsNotNone(self.screen._fields["login"].error)
         type_text(self.screen._fields["login"].entry, "x")
         self.assertIsNone(self.screen._fields["login"].error)

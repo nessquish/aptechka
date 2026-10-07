@@ -233,9 +233,10 @@ class LoginScreen(_AuthScreen):
             self._show_validation_error(error)
         except AuthenticationError as error:
             self._show_banner(str(error))
-            # Неизвестно, что именно неверно, поэтому красными становятся оба поля.
-            self._fields["login"].set_error()
-            self._fields["password"].set_error()
+            # Красным только то поле, где ошибка: если аккаунт найден, а пароль
+            # неверный, логин или почту не трогаем.
+            self._fields[error.field or "password"].set_error()
+            self._fields[error.field or "password"].focus_field()
         else:
             self._app.sign_in(user, password)
 

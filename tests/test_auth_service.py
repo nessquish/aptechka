@@ -93,12 +93,22 @@ class LoginTest(AuthServiceTestCase):
         self.register(login="Anna")
         self.assertEqual(self.auth.login("  ANNA@Mail.RU ", "password1").login, "Anna")
 
-    def test_wrong_email_or_password_gives_the_same_message(self):
+    def test_known_email_with_wrong_password_points_to_the_password(self):
         self.register()
-        for email, password in (("nobody@mail.ru", "password1"), ("anna@mail.ru", "x")):
+        with self.assertRaises(AuthenticationError) as ctx:
+            self.auth.login("anna@mail.ru", "x" * 8)
+        self.assertEqual(str(ctx.exception), "Неверный пароль")
+        self.assertEqual(ctx.exception.field, "password")
+
+    def test_unknown_email_or_login_points_to_the_login_field(self):
+        self.register()
+        for login in ("nobody@mail.ru", "nobody"):
             with self.assertRaises(AuthenticationError) as ctx:
-                self.auth.login(email, password)
-            self.assertEqual(str(ctx.exception), "Неверный логин или пароль")
+                self.auth.login(login, "password1")
+            self.assertEqual(
+                str(ctx.exception), "Аккаунт с таким логином или почтой не найден"
+            )
+            self.assertEqual(ctx.exception.field, "login")
 
     def test_email_of_another_user_does_not_open_this_account(self):
         self.register()
@@ -115,13 +125,11 @@ class LoginTest(AuthServiceTestCase):
         with self.assertRaises(AuthenticationError):
             self.auth.login("anna", "wrong-password")
 
-    def test_unknown_login_gives_same_message_as_wrong_password(self):
+    def test_wrong_password_for_a_known_login_names_the_password(self):
         self.register()
-        with self.assertRaises(AuthenticationError) as wrong_password:
+        with self.assertRaises(AuthenticationError) as ctx:
             self.auth.login("anna", "wrong-password")
-        with self.assertRaises(AuthenticationError) as unknown_login:
-            self.auth.login("nobody", "password1")
-        self.assertEqual(str(wrong_password.exception), str(unknown_login.exception))
+        self.assertEqual(ctx.exception.field, "password")
 
     def test_empty_fields_rejected(self):
         with self.assertRaises(ValidationError) as ctx:
