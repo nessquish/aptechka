@@ -321,6 +321,7 @@ class NotificationsScreen(QWidget):
 
     def _open_product(self, item: Notification) -> None:
         self._mark_read(item)
+        self._reload()  # точка «непрочитано» исчезает под открывшейся карточкой
         self._shell.open_product(item.product_id)
 
     def _add_to_list(self, item: Notification) -> None:

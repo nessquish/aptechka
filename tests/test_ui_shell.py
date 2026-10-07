@@ -10,7 +10,7 @@ from pharmacy.ui import sections
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
 from pharmacy.ui.screens.notifications import NotificationsScreen
-from pharmacy.ui.screens.product_card import ProductCardScreen
+from pharmacy.ui.screens.product_card import ProductCardDialog
 from pharmacy.ui.screens.shell import MainShell
 from pharmacy.ui.screens.shopping import ShoppingScreen
 from pharmacy.ui.widgets.badge import Badge
@@ -55,11 +55,12 @@ class ShellTest(ShellTestCase):
                 self.shell.sidebar.item(name).active, name == sections.NOTIFICATIONS
             )
 
-    def test_card_keeps_my_kit_highlighted(self):
+    def test_card_opens_over_the_screen_and_keeps_the_menu(self):
         self.shell.open_product(1)
         self.settle()
-        self.assertIsInstance(self.page, ProductCardScreen)
-        self.assertTrue(self.shell.sidebar.item(sections.MY_KIT).active)
+        self.assertEqual(len(find_all(self.app, ProductCardDialog)), 1)
+        self.assertIsInstance(self.page, DashboardScreen)
+        self.assertTrue(self.shell.sidebar.item(sections.HOME).active)
 
     def test_unread_counter_is_shown_in_the_menu(self):
         unread = self.services.notifications.count_unread(self.app.user.id)
@@ -190,9 +191,10 @@ class DashboardLinksTest(ShellTestCase):
         link = next(w for w in self.name_links() if w.text() == "Ибупрофен")
         click(link)
         self.settle()
-        card = self.page
-        self.assertIsInstance(card, ProductCardScreen)
-        self.assertEqual(card._view.product.name, "Ибупрофен")
+        cards = find_all(self.app, ProductCardDialog)
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].view.product.name, "Ибупрофен")
+        self.assertIsInstance(self.page, DashboardScreen)
 
     def test_recent_list_links_open_cards_too(self):
         recent = self.services.dashboard.summary(self.app.user.id).recent_products
@@ -200,7 +202,9 @@ class DashboardLinksTest(ShellTestCase):
         links = [w for w in self.name_links() if w.text() == target.name]
         click(links[-1])
         self.settle()
-        self.assertEqual(self.page._view.product.id, target.id)
+        self.assertEqual(
+            find_all(self.app, ProductCardDialog)[0].view.product.id, target.id
+        )
 
 
 class DialogTest(ShellTestCase):

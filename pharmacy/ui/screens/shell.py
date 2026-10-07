@@ -6,13 +6,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 from PySide6.QtGui import QColor, QPainter
 
+from pharmacy.errors import NotFoundError
 from pharmacy.models import User
 from pharmacy.ui.screens.dashboard import DashboardScreen
 from pharmacy.ui.screens.history import HistoryScreen
 from pharmacy.ui.screens.my_kit import MyKitScreen
 from pharmacy.ui.screens.notifications import NotificationsScreen
-from pharmacy.ui.screens.product_card import ProductCardScreen
-from pharmacy.ui.screens.product_form import ProductFormDialog, ProductFormScreen
+from pharmacy.ui.screens.product_card import ProductCardDialog
+from pharmacy.ui.screens.product_form import ProductFormDialog
 from pharmacy.ui.screens.settings import SettingsScreen
 from pharmacy.ui.screens.shopping import ShoppingScreen
 from pharmacy.ui.widgets.dialog import Dialog
@@ -203,17 +204,37 @@ class MainShell(QWidget):
         """Открывает список покупок на нужной вкладке."""
         self.show_screen(lambda shell: ShoppingScreen(shell, tab), sections.SHOPPING)
 
-    def open_product(self, product_id: int) -> None:
-        """Открывает карточку товара."""
-        self.show_screen(
-            lambda shell: ProductCardScreen(shell, product_id), sections.MY_KIT
-        )
+    def refresh(self) -> None:
+        """Перестраивает открытый раздел, чтобы в нём были свежие данные."""
+        self.navigate(self.section)
 
-    def open_product_form(self, product_id: int) -> None:
-        """Открывает экран редактирования товара."""
-        self.show_screen(
-            lambda shell: ProductFormScreen(shell, product_id), sections.MY_KIT
-        )
+    def open_product(self, product_id: int) -> None:
+        """Открывает карточку товара окном поверх текущего экрана."""
+        try:
+            ProductCardDialog(self, product_id)
+        except NotFoundError:  # товар уже удалён
+            self.refresh()
+
+    def edit_product(self, product_id: int) -> None:
+        """Открывает окно редактирования товара поверх текущего экрана.
+
+        После сохранения раздел обновляется и снова открывается карточка. Если
+        окно закрыли кнопкой «Отмена», карточка открывается как была.
+        """
+
+        def saved(view) -> None:
+            self.refresh()
+            if view is not None:
+                self.open_product(product_id)
+
+        try:
+            dialog = ProductFormDialog(
+                self.app, self.services, self.user.id, saved, product_id
+            )
+        except NotFoundError:
+            self.refresh()
+            return
+        dialog.on_cancel(lambda: self.open_product(product_id))
 
     def add_product(self) -> None:
         """Сразу открывает окно добавления товара поверх текущего экрана.
@@ -224,7 +245,7 @@ class MainShell(QWidget):
             self.app,
             self.services,
             self.user.id,
-            lambda: self.navigate(sections.MY_KIT),
+            lambda _view: self.navigate(sections.MY_KIT),
         )
 
     def set_theme(self, name: str) -> None:

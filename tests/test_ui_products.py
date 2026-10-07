@@ -2,6 +2,8 @@
 
 from typing import List
 
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel
 
 from pharmacy.db.seed import seed_bulk
@@ -9,9 +11,9 @@ from pharmacy.models import HistoryAction
 from pharmacy.services.status import ProductStatus
 from pharmacy.ui import sections
 from pharmacy.ui.screens.my_kit import PAGE_SIZE, MyKitScreen
-from pharmacy.ui.screens.product_card import ProductCardScreen, _days_phrase
-from pharmacy.ui.screens.product_form import ProductFormDialog, ProductFormScreen
-from pharmacy.ui.widgets.link import Link
+from pharmacy.ui.screens.product_card import ProductCardDialog, _days_phrase
+from pharmacy.ui.screens.product_form import ProductFormDialog
+from pharmacy.ui.widgets.badge import Badge
 from tests.qt_helpers import ShellTestCase, click, find_all
 
 
@@ -125,7 +127,8 @@ class MyKitTest(KitTestCase):
         first = self.kit.table.cell_widgets(0)[0]
         click(first)
         self.settle()
-        self.assertIsInstance(self.page, ProductCardScreen)
+        self.assertEqual(len(find_all(self.app, ProductCardDialog)), 1)
+        self.assertIsInstance(self.page, MyKitScreen)
 
     def test_add_button_opens_the_dialog_on_the_same_screen(self):
         self.buttons("Добавить товар в аптечку")[0].invoke()
@@ -159,61 +162,29 @@ class MyKitTest(KitTestCase):
         self.assertEqual(len(set(next(iter(lefts)))), 1)
 
 
-class ProductFormTest(KitTestCase):
-    def open_form(self, product="Ибупрофен"):
-        self.shell.open_product_form(self.product_id(product))
+class ProductEditTest(KitTestCase):
+    """Редактирование товара: окно поверх текущего экрана."""
+
+    def edit(self, product="Ибупрофен") -> ProductFormDialog:
+        self.shell.edit_product(self.product_id(product))
         self.settle()
-        return self.page
+        return find_all(self.app, ProductFormDialog)[0]
+
+    def dialogs(self):
+        return find_all(self.app, ProductFormDialog)
 
     def fill(self, form, **values):
-        defaults = dict(name="Аспирин", quantity="3", min_quantity="1")
-        defaults.update(values)
-        for key, value in defaults.items():
+        for key, value in values.items():
             form.fields[key].set(value)
 
-    def test_empty_name_shows_error_and_disables_save(self):
-        form = self.open_form()
-        self.fill(form, name="")
-        form._submit()
-        self.assertEqual(form.fields["name"].error, "Введите название")
-        self.assertFalse(form.save_button.enabled)
-        self.assertIsInstance(self.page, ProductFormScreen)
-
-    def test_bad_values_are_marked_on_their_fields(self):
-        cases = {
-            "quantity": "abc",
-            "min_quantity": "-1",
-            "expiry_date": "31.31.2030",
-        }
-        for key, value in cases.items():
-            form = self.open_form()
-            self.fill(form, **{key: value})
-            form._submit()
-            self.assertIsNotNone(form.fields[key].error, key)
-
-    def test_save_is_enabled_again_after_fixing_the_field(self):
-        form = self.open_form()
-        self.fill(form, name="")
-        form._submit()
-        self.assertFalse(form.save_button.enabled)
-        form.fields["name"].set("Аспирин")
-        form.fields["name"].clear_error()
-        form._refresh_save()
-        self.assertTrue(form.save_button.enabled)
-
-    def test_typing_after_error_reenables_save(self):
-        form = self.open_form()
-        self.fill(form, name="")
-        form._submit()
-        field = form.fields["name"]
-        field.entry.textEdited.emit("А")  # так Qt сообщает о правке пользователем
-        self.settle()
-        self.assertTrue(form.save_button.enabled)
+    def test_edit_opens_over_the_current_screen(self):
+        dialog = self.edit()
+        self.assertTrue(dialog.editing)
+        self.assertIsInstance(self.page, MyKitScreen)
+        self.assertFalse(dialog.isWindow())
 
     def test_edit_prefills_all_fields(self):
-        form = self.open_form("Ибупрофен")
-        self.assertTrue(form.editing)
-        data = form.read_form()
+        data = self.edit().read_form()
         self.assertEqual(data.name, "Ибупрофен")
         self.assertEqual(data.quantity, "2")
         self.assertEqual(data.min_quantity, "3")
@@ -221,12 +192,24 @@ class ProductFormTest(KitTestCase):
         self.assertRegex(data.expiry_date, r"^\d\d\.\d\d\.\d{4}$")
         self.assertTrue(data.category_id)
 
-    def test_edit_saves_and_opens_card(self):
-        form = self.open_form("Ибупрофен")
-        form.fields["quantity"].set("10")
-        form._submit()
+    def test_added_date_shows_when_the_product_was_added(self):
+        dialog = self.edit()
+        self.assertRegex(dialog.added_field.get(), r"^\d\d\.\d\d\.\d{4}$")
+        self.assertTrue(dialog.added_field.entry.isReadOnly())
+
+    def test_titles_and_button_say_editing(self):
+        dialog = self.edit()
+        self.assertEqual(dialog.save_button.text(), "Сохранить изменения")
+
+    def test_edit_saves_closes_and_shows_the_card_again(self):
+        dialog = self.edit()
+        self.fill(dialog, quantity="10")
+        dialog.save_button.invoke()
         self.settle()
-        self.assertIsInstance(self.page, ProductCardScreen)
+        self.assertEqual(self.dialogs(), [])
+        card = find_all(self.app, ProductCardDialog)
+        self.assertEqual(len(card), 1)
+        self.assertIn("10 упак.", [w.text() for w in find_all(card[0], QLabel)])
         view = self.services.products.get_product(
             self.app.user.id, self.product_id("Ибупрофен")
         )
@@ -236,34 +219,97 @@ class ProductFormTest(KitTestCase):
         ]
         self.assertIn(HistoryAction.PRODUCT_UPDATED, actions)
 
-    def test_cancel_goes_back(self):
-        self.open_form("Ибупрофен")
-        self.buttons("Отмена")[0].invoke()
+    def test_table_underneath_is_refreshed_after_saving(self):
+        dialog = self.edit()
+        self.fill(dialog, name="Нурофен")
+        dialog.save_button.invoke()
         self.settle()
-        self.assertIsInstance(self.page, ProductCardScreen)
+        self.assertIn("Нурофен", self.names())
+        self.assertNotIn("Ибупрофен", self.names())
 
-    def test_editing_deleted_product_returns_to_list(self):
-        form = self.open_form("Ибупрофен")
+    def test_empty_name_shows_error_and_disables_save(self):
+        dialog = self.edit()
+        self.fill(dialog, name="")
+        dialog.save_button.invoke()
+        self.assertEqual(dialog.fields["name"].error, "Введите название")
+        self.assertFalse(dialog.save_button.enabled)
+        self.assertEqual(len(self.dialogs()), 1)
+
+    def test_bad_values_are_marked_on_their_fields(self):
+        for key, value in {
+            "quantity": "abc",
+            "min_quantity": "-1",
+            "expiry_date": "31.31.2030",
+        }.items():
+            dialog = self.edit()
+            self.fill(dialog, **{key: value})
+            dialog.save_button.invoke()
+            self.assertIsNotNone(dialog.fields[key].error, key)
+            dialog.close_modal()
+            self.settle()
+
+    def test_typing_after_error_reenables_save(self):
+        dialog = self.edit()
+        self.fill(dialog, name="")
+        dialog.save_button.invoke()
+        dialog.fields["name"].entry.textEdited.emit("А")
+        self.assertTrue(dialog.save_button.enabled)
+
+    def test_cancel_closes_and_returns_to_the_card(self):
+        dialog = self.edit()
+        dialog.cancel_button.invoke()
+        self.settle()
+        self.assertEqual(self.dialogs(), [])
+        self.assertEqual(len(find_all(self.app, ProductCardDialog)), 1)
+
+    def test_nothing_is_saved_on_cancel(self):
+        dialog = self.edit()
+        self.fill(dialog, quantity="99")
+        dialog.cancel_button.invoke()
+        view = self.services.products.get_product(
+            self.app.user.id, self.product_id("Ибупрофен")
+        )
+        self.assertEqual(view.product.quantity, 2)
+
+    def test_editing_a_deleted_product_does_not_crash(self):
+        dialog = self.edit()
         self.services.products.delete_product(
             self.app.user.id, self.product_id("Ибупрофен")
         )
-        form._submit()
+        dialog.save_button.invoke()
         self.settle()
-        self.assertIsInstance(self.page, MyKitScreen)
+        self.assertEqual(self.dialogs(), [])
+
+    def test_editing_a_missing_product_opens_nothing(self):
+        self.shell.edit_product(99999)
+        self.settle()
+        self.assertEqual(self.dialogs(), [])
+
+    def test_add_flow_still_uses_the_same_window(self):
+        self.shell.add_product()
+        self.settle()
+        self.assertFalse(self.dialogs()[0].editing)
 
 
 class ProductCardTest(KitTestCase):
-    def open_card(self, name="Ибупрофен"):
+    """Карточка товара: окно поверх текущего экрана."""
+
+    def open_card(self, name="Ибупрофен") -> ProductCardDialog:
         self.shell.open_product(self.product_id(name))
         self.settle()
-        return self.page
+        return find_all(self.app, ProductCardDialog)[0]
 
-    def texts(self, screen):
-        return [w.text() for w in find_all(screen, QLabel)]
+    def texts(self, widget):
+        return [w.text() for w in find_all(widget, QLabel)]
+
+    def test_card_opens_over_the_current_screen(self):
+        card = self.open_card()
+        self.assertIsInstance(self.page, MyKitScreen)
+        self.assertFalse(card.isWindow())
+        self.assertIs(card.parentWidget(), self.app)
 
     def test_shows_product_data(self):
-        card = self.open_card()
-        texts = self.texts(card)
+        texts = self.texts(self.open_card())
         self.assertIn("Ибупрофен", texts)
         self.assertIn("2 упак.", texts)
         self.assertIn("3 упак.", texts)
@@ -271,63 +317,95 @@ class ProductCardTest(KitTestCase):
         self.assertIn("Жаропонижающее, обезболивающее", texts)
 
     def test_empty_fields_show_no_data(self):
-        card = self.open_card("Бинт")
-        texts = self.texts(card)
+        texts = self.texts(self.open_card("Бинт"))
         self.assertGreaterEqual(texts.count("Нет данных"), 2)
 
     def test_days_left_is_shown_for_expiring_product(self):
+        self.assertTrue(any("через" in t for t in self.texts(self.open_card())))
+
+    def test_status_badges_are_shown(self):
+        card = self.open_card("Активированный уголь")
+        names = [b.text for b in find_all(card, Badge)]
+        self.assertIn("Просрочен", names)
+
+    def test_close_button_and_escape_close_the_card(self):
         card = self.open_card()
-        self.assertTrue(any("через" in t for t in self.texts(card)))
+        click(card.close_button)
+        self.settle()
+        self.assertEqual(find_all(self.app, ProductCardDialog), [])
+        card = self.open_card()
+        QTest.keyClick(card, Qt.Key.Key_Escape)
+        self.settle()
+        self.assertEqual(find_all(self.app, ProductCardDialog), [])
 
     def test_add_to_shopping_list(self):
-        self.open_card("Витамин D")
-        self.buttons("В список покупок")[0].invoke()
+        card = self.open_card("Витамин D")
+        card.list_button.invoke()
         self.settle()
         self.assertTrue(
             self.services.shopping.is_in_list(
                 self.app.user.id, self.product_id("Витамин D")
             )
         )
-        disabled = self.buttons("В списке покупок")
-        self.assertEqual(len(disabled), 1)
-        self.assertFalse(disabled[0].enabled)
+        cards = find_all(self.app, ProductCardDialog)
+        self.assertEqual(len(cards), 1)  # карточка открыта заново, уже с отметкой
+        self.assertFalse(cards[0].list_button.enabled)
+        self.assertEqual(cards[0].list_button.text(), "В списке покупок")
 
-    def test_edit_button_opens_form(self):
-        self.open_card()
-        self.buttons("Редактировать")[0].invoke()
-        self.settle()
-        form = self.page
-        self.assertIsInstance(form, ProductFormScreen)
-        self.assertTrue(form.editing)
-
-    def test_back_link_returns_to_the_list(self):
+    def test_edit_button_opens_the_edit_window(self):
         card = self.open_card()
-        back = next(w for w in find_all(card, Link) if w.text() == "Назад к списку")
-        click(back)
+        card.edit_button.invoke()
         self.settle()
-        self.assertIsInstance(self.page, MyKitScreen)
+        self.assertEqual(find_all(self.app, ProductCardDialog), [])
+        forms = find_all(self.app, ProductFormDialog)
+        self.assertEqual(len(forms), 1)
+        self.assertTrue(forms[0].editing)
 
     def test_delete_asks_confirmation(self):
-        self.open_card()
-        self.buttons("Удалить")[0].invoke()
+        card = self.open_card()
+        card.delete_button.invoke()
         self.settle()
         cancel = self.buttons("Отмена")[0]
         cancel.invoke()
         self.settle()
         self.assertEqual(len(self.names_in_db()), 8)
+        self.assertEqual(len(find_all(self.app, ProductCardDialog)), 1)
 
-    def test_confirmed_delete_removes_product_and_returns_to_list(self):
-        self.open_card()
-        self.buttons("Удалить")[0].invoke()
+    def test_confirmed_delete_removes_product_and_refreshes_the_table(self):
+        card = self.open_card()
+        card.delete_button.invoke()
         self.settle()
-        confirm = [b for b in self.buttons("Удалить") if b._variant == "danger_solid"][
-            0
-        ]
-        confirm.invoke()
+        confirm = [b for b in self.buttons("Удалить") if b._variant == "danger_solid"]
+        confirm[0].invoke()
         self.settle()
+        self.assertEqual(find_all(self.app, ProductCardDialog), [])
         self.assertIsInstance(self.page, MyKitScreen)
         self.assertEqual(len(self.names_in_db()), 7)
         self.assertNotIn("Ибупрофен", self.names())
+
+    def test_card_and_edit_window_fit_into_the_window_at_every_text_size(self):
+        for size in ("normal", "medium", "large"):
+            self.shell.set_text_size(size)
+            self.settle()
+            self.open(sections.MY_KIT)
+            for opener in (self.shell.open_product, self.shell.edit_product):
+                opener(self.product_id("Ибупрофен"))
+                self.settle()
+                dialog = (
+                    find_all(self.app, ProductCardDialog)
+                    or find_all(self.app, ProductFormDialog)
+                )[0]
+                card = dialog.card
+                self.assertGreaterEqual(card.y(), 0, size)
+                self.assertLessEqual(card.y() + card.height(), self.app.height(), size)
+                self.assertLessEqual(card.x() + card.width(), self.app.width(), size)
+                dialog.close_modal()
+                self.settle()
+
+    def test_missing_product_opens_nothing(self):
+        self.shell.open_product(99999)
+        self.settle()
+        self.assertEqual(find_all(self.app, ProductCardDialog), [])
 
     def names_in_db(self):
         return self.services.products.list_products(self.app.user.id)

@@ -5,7 +5,7 @@ from typing import List
 from PySide6.QtWidgets import QLabel
 
 from pharmacy.ui import sections
-from pharmacy.ui.screens.product_card import ProductCardScreen
+from pharmacy.ui.screens.product_card import ProductCardDialog
 from pharmacy.ui.screens.shopping import AddItemDialog, ShoppingScreen
 from pharmacy.ui.widgets.combo import ComboField
 from pharmacy.ui.widgets.controls import Checkbox
@@ -130,7 +130,8 @@ class ShoppingScreenTest(ShoppingTestCase):
         first = self.shopping.table.cell_widgets(1)[0]
         click(first)
         self.settle()
-        self.assertIsInstance(self.page, ProductCardScreen)
+        self.assertEqual(len(find_all(self.app, ProductCardDialog)), 1)
+        self.assertIsInstance(self.page, ShoppingScreen)
 
     def test_empty_list_message(self):
         self.db.execute("DELETE FROM shopping_list")

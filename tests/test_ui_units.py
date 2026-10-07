@@ -5,7 +5,8 @@ import re
 from PySide6.QtWidgets import QLabel
 
 from pharmacy.ui import sections
-from pharmacy.ui.screens.product_form import show_units
+from pharmacy.ui.screens.product_card import ProductCardDialog
+from pharmacy.ui.screens.product_form import ProductFormDialog, show_units
 from pharmacy.utils.units import UNITS
 from tests.qt_helpers import ShellTestCase, find_all
 
@@ -33,7 +34,7 @@ class UnitsEverywhereTest(ShellTestCase):
     def test_product_card_quantity_and_minimum_have_units(self):
         self.shell.open_product(self.product_id("Ибупрофен"))
         self.settle()
-        texts = self.texts(self.page)
+        texts = self.texts(find_all(self.app, ProductCardDialog)[0])
         self.assertIn("2 упак.", texts)
         self.assertIn("3 упак.", texts)
 
@@ -60,12 +61,12 @@ class UnitsEverywhereTest(ShellTestCase):
             )
 
     def test_history_of_quantity_change_has_units(self):
-        form = self.shell
-        form.open_product_form(self.product_id("Ибупрофен"))
+        self.shell.edit_product(self.product_id("Ибупрофен"))
         self.settle()
-        self.page.fields["quantity"].set("10")
-        self.page.fields["min_quantity"].set("4")
-        self.page._submit()
+        dialog = find_all(self.app, ProductFormDialog)[0]
+        dialog.fields["quantity"].set("10")
+        dialog.fields["min_quantity"].set("4")
+        dialog._submit()
         self.settle()
         page = self.open(sections.HISTORY)
         descriptions = " ".join(self.texts(page))
@@ -116,9 +117,10 @@ class FormUnitLabelsTest(ShellTestCase):
     def test_edit_form_shows_the_unit_of_the_product(self):
         views = self.services.products.list_products(self.app.user.id)
         target = next(v for v in views if v.product.name == "Хлоргексидин")
-        self.shell.open_product_form(target.product.id)
+        self.shell.edit_product(target.product.id)
         self.settle()
-        self.assertEqual(self.page.fields["quantity"].title, "Количество (фл.)")
+        dialog = find_all(self.app, ProductFormDialog)[0]
+        self.assertEqual(dialog.fields["quantity"].title, "Количество (фл.)")
 
     def test_saved_product_uses_the_selected_unit(self):
         dialog = self.open_dialog()

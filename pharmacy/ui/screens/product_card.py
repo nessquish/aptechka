@@ -1,4 +1,4 @@
-"""Карточка товара (макет Figma, экраны 06 и 08): просмотр и действия над товаром."""
+"""Карточка товара (макет Figma, экраны 06 и 08): окно поверх текущего экрана."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Tuple
@@ -7,26 +7,23 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from pharmacy.errors import NotFoundError, ValidationError
-from pharmacy.ui.widgets.badge import Badge
-from pharmacy.ui.widgets.button import Button
-from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, label, pad
-from pharmacy.ui.widgets.dialog import Dialog
-from pharmacy.ui.widgets.iconbox import IconBox
-from pharmacy.ui.widgets.link import Link
-from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.services.product_service import ProductView
 from pharmacy.services.status import ProductStatus
-from pharmacy.ui import labels, sections
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
+from pharmacy.ui import labels
+from pharmacy.ui.theme import SHADOW_PAD
+from pharmacy.ui.widgets.badge import Badge
+from pharmacy.ui.widgets.button import Button
+from pharmacy.ui.widgets.common import Line, label, pad
+from pharmacy.ui.widgets.dialog import Dialog, Modal
+from pharmacy.ui.widgets.iconbox import IconBox
+from pharmacy.ui.widgets.iconbutton import IconButton
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity, plural
 
 if TYPE_CHECKING:
     from pharmacy.ui.screens.shell import MainShell
 
-CARD_WIDTH = 760 + 2 * CARD_SHADOW_PAD
-PADDING_X = 22
+DIALOG_WIDTH = 680
 COLUMN_GAP = 30
 NO_DATA = "Нет данных"
 DISCLAIMER = "Показания вносятся пользователем и не являются медицинской рекомендацией."
@@ -47,73 +44,54 @@ def _days_phrase(days: int) -> str:
     return f"через {days} {plural(days, 'день', 'дня', 'дней')}"
 
 
-def _box(parent: QWidget, margins: Tuple[int, int, int, int]) -> QVBoxLayout:
-    layout = QVBoxLayout(parent)
-    layout.setContentsMargins(*margins)
-    layout.setSpacing(0)
-    return layout
+class ProductCardDialog(Modal):
+    """Подробные данные о товаре и действия над ним: окно поверх текущего экрана.
 
-
-class ProductCardScreen(QWidget):
-    """Подробные данные о товаре и действия над ним."""
+    Attributes:
+        view: Показанный товар с его состояниями.
+    """
 
     def __init__(self, shell: "MainShell", product_id: int) -> None:
-        super().__init__()
+        """Открывает карточку.
+
+        Args:
+            shell: Оболочка главного окна.
+            product_id: Товар, который показываем.
+
+        Raises:
+            NotFoundError: Если такого товара нет.
+        """
+        view = shell.services.products.get_product(shell.user.id, product_id)
+        super().__init__(shell.app, DIALOG_WIDTH)
         self._shell = shell
         self._services = shell.services
         self._user = shell.user
         self._product_id = product_id
-        self._view: ProductView = self._services.products.get_product(
-            self._user.id, product_id
-        )
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        header = PageHeader("Карточка товара")
-        header.actions.addWidget(
-            Link(
-                "Назад к списку",
-                lambda: shell.navigate(sections.MY_KIT),
-                style="lead_medium",
-                icon="arrow-left",
-                icon_side="left",
-            )
-        )
-        header.actions.addSpacing(4)
-        layout.addWidget(header)
-        layout.addSpacing(18 - CARD_SHADOW_PAD)
-        self.card = self._build_card()
-        layout.addWidget(self.card, 0, Qt.AlignmentFlag.AlignLeft)
+        self.view: ProductView = view
+        self.body.addLayout(self._build_head())
+        self.body.addSpacing(14)
+        self.body.addWidget(Line("line"))
+        self.body.addWidget(self._build_details())
+        self.body.addWidget(Line("line"))
+        self.body.addLayout(self._build_actions())
         note = label(DISCLAIMER, "label", "ink_3")
-        pad(note, CARD_SHADOW_PAD, 10 - CARD_SHADOW_PAD, 0, 0)
-        layout.addWidget(note)
-        layout.addStretch(1)
+        pad(note, 0, 10, 0, 0)
+        self.body.addWidget(note)
 
     # --- построение ---
 
-    def _build_card(self) -> Card:
-        card = Card()
-        card.setFixedWidth(CARD_WIDTH)
-        inset = card.inner_inset
-        card.body.addWidget(self._build_head(inset))
-        card.body.addWidget(Line("line"))
-        card.body.addWidget(self._build_details(inset))
-        card.body.addWidget(Line("line"))
-        card.body.addWidget(self._build_actions(inset))
-        return card
-
-    def _build_head(self, inset: int) -> QWidget:
-        product = self._view.product
-        head = QWidget()
-        row = QHBoxLayout(head)
-        row.setContentsMargins(PADDING_X - inset, 18 - inset, PADDING_X - inset, 18)
+    def _build_head(self) -> QHBoxLayout:
+        product = self.view.product
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
         row.addWidget(IconBox("cross", "primary"))
         row.addSpacing(12)
         names = QVBoxLayout()
         names.setContentsMargins(0, 0, 0, 0)
         names.setSpacing(0)
-        names.addWidget(label(product.name, "product_title", tight=True))
+        self.title = label(product.name, "product_title", tight=True)
+        names.addWidget(self.title)
         added = datetime.strptime(product.created_at[:10], "%Y-%m-%d").date()
         names.addSpacing(2)
         names.addWidget(
@@ -126,14 +104,17 @@ class ProductCardScreen(QWidget):
         )
         row.addLayout(names)
         row.addStretch(1)
-        for status in self._view.statuses:
+        for status in self.view.statuses:
             row.addSpacing(6)
             row.addWidget(Badge(status.label, labels.STATUS_TONES[status]))
-        return head
+        row.addSpacing(10)
+        self.close_button = IconButton("x", self.close_modal)
+        row.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
+        return row
 
     def _details(self) -> List[Tuple[str, str, str]]:
         """Пары «название поля, значение, цвет значения» для таблицы данных."""
-        product = self._view.product
+        product = self.view.product
         unit = product.unit
         expiry = NO_DATA
         if product.expiry_date is not None:
@@ -151,10 +132,10 @@ class ProductCardScreen(QWidget):
             ("Примечание", product.note or NO_DATA, "ink"),
         ]
 
-    def _build_details(self, inset: int) -> QWidget:
+    def _build_details(self) -> QWidget:
         host = QWidget()
         grid = QGridLayout(host)
-        grid.setContentsMargins(PADDING_X - inset, 2, PADDING_X - inset, 2)
+        grid.setContentsMargins(0, 2, 0, 2)
         grid.setSpacing(0)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
@@ -191,18 +172,15 @@ class ProductCardScreen(QWidget):
         line.addWidget(
             label(value, "value", color, wrap=title in WIDE_FIELDS, tight=True)
         )
-        if title == "Срок годности" and self._view.days_left is not None:
-            tone = "red" if self._view.days_left < 0 else "amber"
-            if ProductStatus.EXPIRED not in self._view.statuses and (
-                ProductStatus.EXPIRING not in self._view.statuses
+        if title == "Срок годности" and self.view.days_left is not None:
+            tone = "red" if self.view.days_left < 0 else "amber"
+            if ProductStatus.EXPIRED not in self.view.statuses and (
+                ProductStatus.EXPIRING not in self.view.statuses
             ):
                 tone = "ink_3"
             line.addWidget(
                 label(
-                    f" · {_days_phrase(self._view.days_left)}",
-                    "small",
-                    tone,
-                    tight=True,
+                    f" · {_days_phrase(self.view.days_left)}", "small", tone, tight=True
                 )
             )
         line.addStretch(1)
@@ -211,11 +189,10 @@ class ProductCardScreen(QWidget):
         outer.addWidget(Line("line_soft"))
         return cell
 
-    def _build_actions(self, inset: int) -> QWidget:
-        host = QWidget()
-        row = QHBoxLayout(host)
-        side = PADDING_X - inset - SHADOW_PAD
-        row.setContentsMargins(side, 10, side, 10)
+    def _build_actions(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        # Кнопки шире своей видимой части на поле под тень: выравниваем по тексту.
+        row.setContentsMargins(-SHADOW_PAD, 10, -SHADOW_PAD, 0)
         row.setSpacing(0)
         self.delete_button = Button(
             "Удалить", command=self._confirm_delete, variant="danger"
@@ -229,12 +206,10 @@ class ProductCardScreen(QWidget):
             self.list_button = Button("В список покупок", command=self._add_to_list)
         row.addWidget(self.list_button)
         self.edit_button = Button(
-            "Редактировать",
-            command=lambda: self._shell.open_product_form(self._product_id),
-            variant="primary",
+            "Редактировать", command=self._edit, variant="primary"
         )
         row.addWidget(self.edit_button)
-        return host
+        return row
 
     # --- действия ---
 
@@ -243,12 +218,18 @@ class ProductCardScreen(QWidget):
             self._services.shopping.add_from_product(self._user.id, self._product_id)
         except (NotFoundError, ValidationError):
             pass
+        self.close_modal()
+        self._shell.refresh()
         self._shell.open_product(self._product_id)
+
+    def _edit(self) -> None:
+        self.close_modal()
+        self._shell.edit_product(self._product_id)
 
     def _confirm_delete(self) -> None:
         Dialog(
             self._shell.app,
-            f"Удалить товар «{self._view.product.name}»?",
+            f"Удалить товар «{self.view.product.name}»?",
             DELETE_TEXT,
             "Удалить",
             self._delete,
@@ -261,4 +242,5 @@ class ProductCardScreen(QWidget):
             self._services.products.delete_product(self._user.id, self._product_id)
         except NotFoundError:
             pass
-        self._shell.navigate(sections.MY_KIT)
+        self.close_modal()
+        self._shell.refresh()

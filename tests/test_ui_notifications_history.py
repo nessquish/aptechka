@@ -10,7 +10,7 @@ from pharmacy.models import HistoryAction, NotificationKind
 from pharmacy.ui import periods, sections
 from pharmacy.ui.screens.history import HistoryScreen, day_title, group_by_day
 from pharmacy.ui.screens.notifications import NotificationsScreen, _when
-from pharmacy.ui.screens.product_card import ProductCardScreen
+from pharmacy.ui.screens.product_card import ProductCardDialog
 from pharmacy.ui.theme import SHADOW_PAD
 from pharmacy.ui.widgets.badge import Badge
 from pharmacy.ui.widgets.button import Button
@@ -164,7 +164,8 @@ class NotificationsTest(ShellTestCase):
         target = self.notifications()[0]
         self.buttons("Открыть товар")[0].invoke()
         self.settle()
-        self.assertIsInstance(self.page, ProductCardScreen)
+        self.assertEqual(len(find_all(self.app, ProductCardDialog)), 1)
+        self.assertIsInstance(self.page, NotificationsScreen)
         refreshed = self.services.notifications.list_notifications(self.app.user.id)
         self.assertTrue(next(n for n in refreshed if n.id == target.id).is_read)
 

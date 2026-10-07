@@ -1,39 +1,30 @@
-"""Форма товара: окно добавления и экран редактирования (макет Figma, 05 и 07)."""
+"""Форма товара: окно добавления и редактирования (макет Figma, экраны 05 и 07)."""
 
-from datetime import date
-from typing import TYPE_CHECKING, Callable, Dict
+from datetime import date, datetime
+from typing import Callable, Dict, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QWidget
 
 from pharmacy.errors import NotFoundError, ValidationError
 from pharmacy.services.container import Services
 from pharmacy.services.product_service import ProductForm, ProductView
-from pharmacy.ui import sections
-from pharmacy.ui.theme import CARD_SHADOW_PAD, SHADOW_PAD
+from pharmacy.ui.theme import SHADOW_PAD
 from pharmacy.ui.widgets.button import Button
-from pharmacy.ui.widgets.card import Card
-from pharmacy.ui.widgets.common import Line, label
+from pharmacy.ui.widgets.common import label
 from pharmacy.ui.widgets.dialog import Modal
 from pharmacy.ui.widgets.field import TextField
-from pharmacy.ui.widgets.link import Link
-from pharmacy.ui.widgets.page import PageHeader
 from pharmacy.ui.widgets.select import Select
 from pharmacy.utils.dates import format_user_date
 from pharmacy.utils.formatting import format_quantity
 from pharmacy.utils.units import DEFAULT_UNIT, UNITS
 
-if TYPE_CHECKING:
-    from pharmacy.ui.screens.shell import MainShell
-
-CARD_WIDTH = 760 + 2 * CARD_SHADOW_PAD
-PADDING_X = 24
-PADDING_Y = 22
 COLUMN_GAP = 18
 ROW_GAP = 14
 DIALOG_WIDTH = 720
 DIALOG_COLUMNS = 3
 ADD_TITLE = "Добавить товар в аптечку"
+EDIT_TITLE = "Редактирование товара"
 
 
 def make_fields(services: Services, change: Callable[[], None]) -> Dict[str, QWidget]:
@@ -125,11 +116,15 @@ def has_error(fields: Dict[str, QWidget]) -> bool:
 
 
 class ProductFormDialog(Modal):
-    """Окно «Добавить товар в аптечку»: открывается поверх текущего экрана.
+    """Окно добавления или редактирования товара поверх текущего экрана.
+
+    Без ``product_id`` открывается «Добавить товар в аптечку», с ним
+    «Редактирование товара» с уже заполненными полями.
 
     Attributes:
         fields: Поля формы по именам из ``ProductForm``.
         added_field: Дата добавления (только показывается, ставится сама).
+        editing: Редактируется существующий товар.
     """
 
     def __init__(
@@ -137,7 +132,8 @@ class ProductFormDialog(Modal):
         host: QWidget,
         services: Services,
         user_id: int,
-        on_saved: Callable[[], None],
+        on_saved: Callable[[ProductView], None],
+        product_id: Optional[int] = None,
     ) -> None:
         """Открывает окно.
 
@@ -145,24 +141,57 @@ class ProductFormDialog(Modal):
             host: Окно приложения.
             services: Сервисы приложения.
             user_id: Владелец аптечки.
-            on_saved: Вызывается после сохранения (окно к этому моменту закрыто).
+            on_saved: Вызывается с сохранённым товаром (окно уже закрыто).
+            product_id: Редактируемый товар или None для нового.
+
+        Raises:
+            NotFoundError: Если редактируемого товара нет.
         """
+        existing = (
+            services.products.get_product(user_id, product_id)
+            if product_id is not None
+            else None
+        )
         super().__init__(host, DIALOG_WIDTH, on_enter=self._submit)
         self._services = services
         self._user_id = user_id
         self._on_saved = on_saved
-        self.add_title(ADD_TITLE)
+        self._product_id = product_id
+        self._on_cancel: Optional[Callable[[], None]] = None
+        self.editing = existing is not None
+        self.add_title(EDIT_TITLE if self.editing else ADD_TITLE)
         self.fields = make_fields(services, self._refresh_save)
         self.added_field = TextField(
-            "Дата добавления",
-            readonly=True,
-            trailing_icon="calendar",
+            "Дата добавления", readonly=True, trailing_icon="calendar"
         )
         self.added_field.set(format_user_date(date.today()))
+        if existing is not None:
+            self._fill(existing)
         self.body.addLayout(self._build_grid())
         self.body.addSpacing(8)
         self.body.addLayout(self._build_footer())
         self.fields["name"].focus_field()
+
+    def _fill(self, view: ProductView) -> None:
+        product = view.product
+        self.fields["name"].set(product.name)
+        self.fields["category_id"].set(product.category_id)
+        self.fields["quantity"].set(format_quantity(product.quantity))
+        self.fields["unit"].set(product.unit)
+        self.fields["expiry_date"].set(
+            format_user_date(product.expiry_date) if product.expiry_date else ""
+        )
+        self.fields["storage_place"].set(product.storage_place)
+        self.fields["min_quantity"].set(format_quantity(product.min_quantity))
+        self.fields["indications"].set(product.indications)
+        self.fields["note"].set(product.note)
+        added = datetime.strptime(product.created_at[:10], "%Y-%m-%d").date()
+        self.added_field.set(format_user_date(added))
+        show_units(self.fields)
+
+    def read_form(self) -> ProductForm:
+        """Собирает введённые значения в форму для сервиса."""
+        return read_form(self.fields)
 
     def _build_grid(self) -> QGridLayout:
         grid = QGridLayout()
@@ -203,8 +232,12 @@ class ProductFormDialog(Modal):
         row.addWidget(label("*", "label", "red"))
         row.addWidget(label(" — обязательные поля", "label", "ink_3"))
         row.addStretch(1)
-        self.cancel_button = Button("Отмена", self.close_modal)
-        self.save_button = Button("Сохранить", self._submit, variant="primary")
+        self.cancel_button = Button("Отмена", self._cancel)
+        self.save_button = Button(
+            "Сохранить изменения" if self.editing else "Сохранить",
+            self._submit,
+            variant="primary",
+        )
         row.addWidget(self.cancel_button)
         row.addWidget(self.save_button)
         return row
@@ -213,165 +246,34 @@ class ProductFormDialog(Modal):
         """Кнопка недоступна, пока у какого-нибудь поля показана ошибка."""
         self.save_button.set_enabled(not has_error(self.fields))
 
+    def _cancel(self) -> None:
+        self.close_modal()
+        if self._on_cancel is not None:
+            self._on_cancel()
+
+    def on_cancel(self, callback: Callable[[], None]) -> None:
+        """Вызывает функцию, когда окно закрыли без сохранения кнопкой «Отмена»."""
+        self._on_cancel = callback
+
     def _submit(self) -> None:
         for widget in self.fields.values():
             widget.clear_error()
         try:
-            self._services.products.add_product(self._user_id, read_form(self.fields))
+            if self._product_id is None:
+                view = self._services.products.add_product(
+                    self._user_id, self.read_form()
+                )
+            else:
+                view = self._services.products.update_product(
+                    self._user_id, self._product_id, self.read_form()
+                )
         except ValidationError as error:
             show_error(self.fields, error)
             self._refresh_save()
             return
+        except NotFoundError:  # товар успели удалить
+            self.close_modal()
+            self._on_saved(None)
+            return
         self.close_modal()
-        self._on_saved()
-
-
-class ProductFormScreen(QWidget):
-    """Экран редактирования уже существующего товара."""
-
-    def __init__(self, shell: "MainShell", product_id: int) -> None:
-        """Создаёт форму.
-
-        Args:
-            shell: Оболочка главного окна.
-            product_id: Редактируемый товар.
-        """
-        super().__init__()
-        self._shell = shell
-        self._services = shell.services
-        self._user = shell.user
-        self._product_id = product_id
-        self._existing: ProductView = self._services.products.get_product(
-            self._user.id, product_id
-        )
-        self._fields = make_fields(self._services, self._refresh_save)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self._build_header())
-        layout.addSpacing(18 - CARD_SHADOW_PAD)
-        layout.addWidget(self._build_card(), 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addStretch(1)
-        self._fill(self._existing)
-
-    @property
-    def editing(self) -> bool:
-        """Экран всегда редактирует существующий товар."""
-        return True
-
-    @property
-    def fields(self) -> Dict[str, QWidget]:
-        """Поля формы по именам из ``ProductForm``."""
-        return self._fields
-
-    # --- построение ---
-
-    def _build_header(self) -> PageHeader:
-        header = PageHeader("Редактирование товара")
-        header.actions.addWidget(
-            Link(
-                "Назад к карточке",
-                self._go_back,
-                style="lead_medium",
-                icon="arrow-left",
-                icon_side="left",
-            )
-        )
-        header.actions.addSpacing(4)
-        return header
-
-    def _build_card(self) -> Card:
-        card = Card()
-        card.setFixedWidth(CARD_WIDTH)
-        inset = card.inner_inset
-        body = QWidget()
-        grid = QGridLayout(body)
-        grid.setContentsMargins(
-            PADDING_X - inset - SHADOW_PAD,
-            PADDING_Y - inset - SHADOW_PAD,
-            PADDING_X - inset - SHADOW_PAD,
-            ROW_GAP - SHADOW_PAD - 2,
-        )
-        grid.setHorizontalSpacing(COLUMN_GAP - 2 * SHADOW_PAD)
-        grid.setVerticalSpacing(ROW_GAP - SHADOW_PAD - 2)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        for index, (key, widget) in enumerate(self._fields.items()):
-            row, col = divmod(index, 2)
-            span = 1
-            if key == "note":
-                row, col, span = 4, 0, 2
-            grid.addWidget(widget, row, col, 1, span, Qt.AlignmentFlag.AlignTop)
-        card.body.addWidget(body)
-        self._build_footer(card, inset)
-        return card
-
-    def _build_footer(self, card: Card, inset: int) -> None:
-        rule = QHBoxLayout()
-        rule.setContentsMargins(
-            PADDING_X - inset, 20 - SHADOW_PAD, PADDING_X - inset, 0
-        )
-        rule.addWidget(Line("line"))
-        card.body.addLayout(rule)
-        row = QHBoxLayout()
-        side = PADDING_X - inset - SHADOW_PAD
-        row.setContentsMargins(side, 12, side, 12)
-        row.setSpacing(0)
-        row.addSpacing(SHADOW_PAD)
-        row.addWidget(label("*", "label", "red"))
-        row.addWidget(label(" — обязательные поля", "label", "ink_3"))
-        row.addStretch(1)
-        self.cancel_button = Button("Отмена", self._go_back)
-        self._save = Button(
-            "Сохранить изменения", command=self._submit, variant="primary"
-        )
-        row.addWidget(self.cancel_button)
-        row.addWidget(self._save)
-        card.body.addLayout(row)
-
-    # --- данные ---
-
-    def _fill(self, view: ProductView) -> None:
-        product = view.product
-        self._fields["name"].set(product.name)
-        self._fields["category_id"].set(product.category_id)
-        self._fields["quantity"].set(format_quantity(product.quantity))
-        self._fields["unit"].set(product.unit)
-        show_units(self._fields)
-        self._fields["expiry_date"].set(
-            format_user_date(product.expiry_date) if product.expiry_date else ""
-        )
-        self._fields["storage_place"].set(product.storage_place)
-        self._fields["min_quantity"].set(format_quantity(product.min_quantity))
-        self._fields["indications"].set(product.indications)
-        self._fields["note"].set(product.note)
-
-    def read_form(self) -> ProductForm:
-        """Собирает введённые значения в форму для сервиса."""
-        return read_form(self._fields)
-
-    @property
-    def save_button(self) -> Button:
-        """Кнопка «Сохранить изменения»."""
-        return self._save
-
-    def _refresh_save(self) -> None:
-        """Кнопка недоступна, пока у какого-нибудь поля показана ошибка."""
-        self._save.set_enabled(not has_error(self._fields))
-
-    def _submit(self) -> None:
-        for widget in self._fields.values():
-            widget.clear_error()
-        try:
-            view = self._services.products.update_product(
-                self._user.id, self._product_id, self.read_form()
-            )
-            self._shell.open_product(view.product.id)
-        except ValidationError as error:
-            show_error(self._fields, error)
-            self._refresh_save()
-        except NotFoundError:
-            self._shell.navigate(sections.MY_KIT)
-
-    def _go_back(self) -> None:
-        self._shell.open_product(self._product_id)
+        self._on_saved(view)
