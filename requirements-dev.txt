@@ -2,3 +2,6 @@
 black
 flake8
 pre-commit
+pyinstaller
+# Pillow собирает многоразмерный значок .ico при сборке Aptechka.exe
+Pillow>=10.0

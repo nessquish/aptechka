@@ -12,3 +12,7 @@ data/
 .idea/
 .vscode/
 *.swp
+
+# Сборка программы в .exe (создаётся packaging\build_exe.py)
+build/
+dist/
